@@ -1,0 +1,29 @@
+{
+  "name": "dsh-memo",
+  "version": "0.0.1",
+  "description": "Memo — session memory search for DeepSeek Harness agents: cross-session full-text recall (memo_search), distilled notes (memo_remember), and corpus stats (memo_stats) over the official sessionQuery service. Zero infrastructure, local-first.",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "memo.client.js"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "memory",
+    "agent-memory",
+    "session-search",
+    "recall"
+  ],
+  "author": "lesliechowsh",
+  "license": "MIT",
+  "homepage": "https://github.com/lesliechowsh/dsh-memo#readme",
+  "bugs": {
+    "url": "https://github.com/lesliechowsh/dsh-memo/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lesliechowsh/dsh-memo"
+  }
+}
