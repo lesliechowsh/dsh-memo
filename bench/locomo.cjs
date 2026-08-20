@@ -25,8 +25,14 @@ const FILE = process.env.LOCOMO_FILE || ((process.env.HOME || ".") + "/locomo10.
 const REQUEST_LIMIT = 10;
 const TERM_MAX = 8;
 
+const STOP_WORDS = new Set(['the','a','an','and','or','what','did','do','does','is','are','was','were','to','of','in','on','at','for','with','about','we','you','i','it','this','that','how','when','where','which','why','be','been','from','by','as','there','not','can','could','should','would','just','also']);
+// Content words fill the 8-token window first; stopwords fill the remainder
+// (mirrors the shipped product — query-head stopwords must not crowd out
+// discriminative words).
 function tokenize(text) {
-  return [...new Set(String(text).toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))];
+  const all = [...new Set(String(text).toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))];
+  const content = all.filter((t) => !STOP_WORDS.has(t));
+  return [...content, ...all.filter((t) => STOP_WORDS.has(t))].slice(0, 8);
 }
 
 function seq(text) {

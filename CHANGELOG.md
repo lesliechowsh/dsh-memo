@@ -4,6 +4,42 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.5.0 — 2026-08-20
+
+Three bugs found by code review — two made features fail outright — fixed and
+re-measured:
+
+- **Fixed** the 8-token query window: query-head stopwords ("what did we
+  decide about the…") crowded out content words and even out-weighted them
+  in the merge. Tokenization is now content-word-first, stopwords fill
+  leftover slots. LongMemEval-S hit@1 54.6% → **74.8%** (MRR 0.636 →
+  0.812); LoCoMo10 hit@1 43.7% → **53.2%** (MRR 0.568 → 0.651).
+  Weak types: assistant-quoted hit@1 17.9% → 51.8%, preference 26.7% →
+  33.3%, temporal 46.6% → 75.9%.
+- **Fixed** empty tokens matching every note: a pure-Chinese query
+  tokenized to zero tokens and `noteMatches` fell back to
+  `text.includes("")` — returning the entire notes store. Empty tokens now
+  match nothing.
+- **Fixed** note append corruption: a hand-edited `notes.jsonl` missing its
+  trailing newline had the next record concatenated onto the last line,
+  silently losing both. Appends now insert the missing newline.
+- **New** honest CJK handling: `memo_search` returns a `cjkWarning` for
+  Chinese queries (the backend's unicode61 index treats contiguous CJK runs
+  as single tokens; index-side fix belongs upstream).
+- **Benchmarks** — LongMemEval-CN cross-lingual harness (`cn.cjs`): Chinese
+  questions over the original English haystacks, hit@1 33.6% entirely from
+  untranslated Latin tokens; translation is the gap, not tokenization.
+  Deterministic time-aware retrieval measured in `exp3.cjs` and **rejected
+  with published evidence**: hard `since` filtering hurts (temporal hit@1
+  75.9% → 69.9%), soft/dual variants are neutral — matching the paper's own
+  weak-model finding.
+
+## 0.4.2 — 2026-08-20
+
+- Docs: "Trust: the evidence trail" section — own-measured numbers, published
+  rejected experiments, open self-corrections, stated scope, no strawman
+  baselines; positioning statement and repo description updated.
+
 ## 0.4.1 — 2026-08-20
 
 - Docs: Tools section expanded into a per-tool reference (parameter tables,

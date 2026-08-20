@@ -37,8 +37,14 @@ const DIR = process.env.BENCH_DIR || ((process.env.HOME || ".") + "/bench");
 const REQUEST_LIMIT = 10; // memo_search's default limit — the page size for both steps.
 const TERM_MAX = 8;      // memo_search tokenizes at most 8 terms per query.
 
+const STOP_WORDS = new Set(['the','a','an','and','or','what','did','do','does','is','are','was','were','to','of','in','on','at','for','with','about','we','you','i','it','this','that','how','when','where','which','why','be','been','from','by','as','there','not','can','could','should','would','just','also']);
+// Content words fill the 8-token window first; stopwords fill the remainder
+// (mirrors the shipped product — query-head stopwords must not crowd out
+// discriminative words).
 function tokenize(text) {
-  return [...new Set(String(text).toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))];
+  const all = [...new Set(String(text).toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))];
+  const content = all.filter((t) => !STOP_WORDS.has(t));
+  return [...content, ...all.filter((t) => STOP_WORDS.has(t))].slice(0, 8);
 }
 
 // Token sequence (len >= 1) for phrase/term occurrence counting.

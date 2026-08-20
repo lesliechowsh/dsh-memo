@@ -17,6 +17,17 @@ exports.name = "dsh-memo";
 exports.inject = ["tools", "sessionQuery", "fs", "shellEnv"];
 
 exports.apply = function (ctx) {
+  // Content words fill the 8-token window first; stopwords only fill the
+  // remainder. The old inline tokenizer let query-head stopwords ("what did
+  // we decide about the…") crowd out the discriminative words, and the
+  // length-weighted merge even rewarded some of them.
+  const STOP = new Set(["the", "a", "an", "and", "or", "what", "did", "do", "does", "is", "are", "was", "were", "to", "of", "in", "on", "at", "for", "with", "about", "we", "you", "i", "it", "this", "that", "how", "when", "where", "which", "why", "be", "been", "from", "by", "as", "there", "not", "can", "could", "should", "would", "just", "also"]);
+  function tokenize(text) {
+    const all = [...new Set(String(text).toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))];
+    const content = all.filter((t) => !STOP.has(t));
+    return [...content, ...all.filter((t) => STOP.has(t))].slice(0, 8);
+  }
+
   function resolveNotesPath(exec) {
     try {
       const env = ctx.shellEnv.collect(exec);
@@ -50,8 +61,11 @@ exports.apply = function (ctx) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const raw = await readNotesText(path);
+        // Hand-edited files may not end with a newline; without this the
+        // next record concatenates onto the last line and both are lost.
+        const sep = raw === "" || raw.endsWith("\n") ? "" : "\n";
         const target = await ctx.fs.resolve(path);
-        await ctx.fs.writeText(target, raw + JSON.stringify(record) + "\n");
+        await ctx.fs.writeText(target, raw + sep + JSON.stringify(record) + "\n");
         return true;
       } catch (err) { /* retry */ }
     }
@@ -69,6 +83,7 @@ exports.apply = function (ctx) {
   }
 
   function noteMatches(note, tokens, tags) {
+    if (tokens.length === 0) return false; // empty tokens (e.g. pure-CJK query) must not match everything
     const text = String(note.text || "").toLowerCase();
     const textOk = tokens.length <= 1 ? text.includes(tokens[0] || "") : tokens.every((t) => text.includes(t));
     if (tags !== null && tags.length > 0) {
@@ -124,13 +139,12 @@ exports.apply = function (ctx) {
   }
 
   async function tokenizedSearch(query, limit, since) {
-    const tokens = [...new Set(String(query).toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))].slice(0, 8);
+    const tokens = tokenize(query);
     if (tokens.length <= 1) return [];
     // Phrase list: each token, then each consecutive token pair. Merge score
     // = sum of matched phrase weights (token length; pair string length) —
     // a local rarity proxy: longer content words and verbatim pairs
-    // discriminate better than common short words. Measured on LongMemEval-S:
-    // hit@1 36.2% -> 54.6%, MRR 0.498 -> 0.636 vs. pure matched-term count.
+    // discriminate better than common short words.
     const phrases = [];
     for (const t of tokens) phrases.push([t, t.length]);
     for (let i = 0; i + 1 < tokens.length; i++) {
@@ -202,11 +216,14 @@ exports.apply = function (ctx) {
         result.error = "search failed: " + String((err && err.message) || err);
       }
       try {
-        const tokens = [...new Set(String(args.query || "").toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))].slice(0, 8);
+        const tokens = tokenize(args.query || "");
         const tags = typeof args.tags === "string" ? args.tags.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean) : null;
         const notes = parseNotes(await readNotesText(resolveNotesPath(exec)));
         result.notes = notes.filter((n) => noteMatches(n, tokens, tags)).slice(-limit).reverse();
       } catch (err) { /* notes optional */ }
+      if (/\p{Script=Han}/u.test(String(args.query || ""))) {
+        result.cjkWarning = "query contains Chinese: the session-query backend (unicode61 FTS5) indexes contiguous CJK runs only, so Chinese recall is limited to exact verbatim runs; index-side fix belongs upstream (see bench/README)";
+      }
       return result;
     },
   });

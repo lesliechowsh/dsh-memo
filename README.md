@@ -63,7 +63,8 @@ The differentiator is not a claim — it's that every claim can be checked:
 
 - **Every number is the shipped product's own.** The benchmark harnesses in [`bench/`](bench/README.md) reproduce the exact pipeline `memo_search` runs — page sizes, ranking, truncation — not an idealized variant. Rerun them with the same dataset bytes and you get the same numbers; the environment is recorded.
 - **Rejected experiments are published.** The variant log shows the dead ends, not just the winner: equal-weight bigrams collapsed hit@1 to 5.2%, a wider per-term page wasn't worth 2× the API calls. You can see what was tried and why it lost.
-- **Mistakes are corrected in the open.** CHANGELOG records the self-corrections: session ids read from the wrong field (0.3.0), titles silently nulled (0.3.1), benchmark numbers re-measured **down** when the harness was found to over-collect candidates (0.3.1), then **up** when the algorithm actually improved (0.4.0). No quietly rewritten history.
+- **Mistakes are corrected in the open.** CHANGELOG records the self-corrections: session ids read from the wrong field (0.3.0), titles silently nulled (0.3.1), benchmark numbers re-measured **down** when the harness was found to over-collect candidates (0.3.1), then **up** when the algorithm actually improved (0.4.0) and again when three real bugs were fixed (0.5.0): stopwords crowding out content words (hit@1 54.6% → 74.8%), Chinese queries returning the entire notes store, and hand-edited notes files corrupting on append. No quietly rewritten history.
+- **Promising ideas are tested, not assumed.** The LongMemEval paper's time-aware query expansion was re-implemented deterministically and measured: hard time filtering *hurts* (temporal hit@1 75.9% → 69.9%), soft variants are neutral — so none shipped, and the full experiment is published in [`bench/`](bench/README.md).
 - **Scope is stated, not implied.** Session localization is not end-to-end answer accuracy; the weak question types are named; the 2× backend-call cost of the 0.4.0 algorithm is disclosed up front.
 - **No strawman baselines.** You will never find a comparison row for a process this product does not run, or a third-party self-reported figure presented as a reference.
 
@@ -71,6 +72,7 @@ The differentiator is not a claim — it's that every claim can be checked:
 
 - **DeepSeek Harness** with the `sessionQuery` service in the composition (shipped in the standard `web` profile).
 - The deployment's session-query index must be open — if it is configured with `openAt: "never"`, session search is disabled and `memo_search` reports it honestly instead of guessing.
+- **Chinese / CJK**: the backend's unicode61 FTS5 index treats contiguous CJK runs as single tokens, so Chinese sessions are searchable only by exact verbatim runs. `memo_search` returns a `cjkWarning` for Chinese queries; the fix is index-side and belongs upstream (see [`bench/`](bench/README.md)).
 - Notes need `$DSH_HOME` resolvable at tool-execution time (standard on every DSH deployment).
 - No other services, no API keys, no network calls.
 
@@ -189,7 +191,7 @@ Corpus overview — no parameters.
 ```
 
 - **Reads the official corpus** — DSH's `sessionQuery` service is the single source of truth; Memo re-indexes nothing, duplicates nothing.
-- **Two-layer recall** — phrase-first exact matches, then each question token and consecutive token pair matched as its own phrase, merged by summed weights (token length, pair length — a local rarity proxy). Question-style queries work, not just keywords.
+- **Two-layer recall** — phrase-first exact matches, then each question token and consecutive token pair matched as its own phrase, merged by summed weights (token length, pair length — a local rarity proxy). Query tokens are content-word-first: stopwords only fill leftover window slots. Question-style queries work, not just keywords.
 - **Notes are plain JSONL** at `$DSH_HOME/memo/notes.jsonl` — human-readable, editable, portable.
 
 ## Usage
@@ -240,34 +242,39 @@ Writing (`memo_remember`) and reading (`memo_search`) follow the survey's memory
 
 ## Benchmark
 
-Measured on two datasets under the exact pipeline `memo_search` ships — phrase-first plus weighted token/pair merge, with the official backend's page-size truncation and representative-event ranking — reproduced in the harnesses over the same FTS5 engine class the backend uses. Full protocol, environment, and the variant-selection experiment log: [`bench/`](bench/README.md).
+Measured on three evaluations under the exact pipeline `memo_search` ships — phrase-first plus weighted token/pair merge, with the official backend's page-size truncation and representative-event ranking — reproduced in the harnesses over the same FTS5 engine class the backend uses. Full protocol, environment, and the variant-selection experiment log: [`bench/`](bench/README.md).
 
 **LongMemEval-S** ([arXiv:2410.10813](https://arxiv.org/abs/2410.10813), 500 questions, 54-session haystacks per question):
 
-**hit@1 54.6% · hit@5 75.0% · hit@10 82.8% · MRR 0.636**
+**hit@1 74.8% · hit@5 89.8% · hit@10 95.2% · MRR 0.812**
 
 | Question type | n | hit@1 | hit@5 | MRR |
 |---|---|---|---|---|
-| multi-session | 133 | 59.4% | 80.5% | 0.691 |
-| temporal-reasoning | 133 | 46.6% | 74.4% | 0.587 |
-| knowledge-update | 78 | 83.3% | 97.4% | 0.893 |
-| single-session-user | 70 | 70.0% | 88.6% | 0.784 |
-| single-session-assistant | 56 | 17.9% | 26.8% | 0.220 |
-| single-session-preference | 30 | 26.7% | 53.3% | 0.378 |
+| multi-session | 133 | 78.9% | 94.0% | 0.855 |
+| temporal-reasoning | 133 | 75.9% | 91.0% | 0.820 |
+| knowledge-update | 78 | 91.0% | 98.7% | 0.948 |
+| single-session-user | 70 | 82.9% | 91.4% | 0.867 |
+| single-session-assistant | 56 | 51.8% | 78.6% | 0.631 |
+| single-session-preference | 30 | 33.3% | 60.0% | 0.435 |
 
 **LoCoMo10** ([snap-research/LoCoMo](https://github.com/snap-research/LoCoMo), 1986 questions over 10 very long conversations, cross-dataset check):
 
-**hit@1 43.7% · hit@5 73.7% · hit@10 87.3% · MRR 0.568**
+**hit@1 53.2% · hit@5 80.4% · hit@10 91.1% · MRR 0.651**
 
-**Scope:** these measure session localization — whether the gold session appears in the top-k — not end-to-end answer accuracy, which is a separate roadmap item. The retrieval algorithm shipped in 0.4.0 was selected on LongMemEval-S and validated on LoCoMo10; assistant-quoted and preference-type questions remain the weakest types.
+**LongMemEval-CN cross-lingual** (Chinese questions over the original English haystacks): **hit@1 33.6%** — and that number comes entirely from Latin tokens left untranslated in the questions; pure-Chinese queries cannot match English sessions, and no tokenizer change fixes that (the gap is translation). `memo_search` detects Chinese queries and returns a `cjkWarning` about the backend's unicode61 CJK limitation instead of pretending; a Chinese-session evaluation corpus does not exist publicly yet.
+
+**Scope:** these measure session localization — whether the gold session appears in the top-k — not end-to-end answer accuracy, and not the LongMemEval paper's M-scale (500-session) Recall@k protocol. The weak types (assistant-quoted, preference) remain the frontier: lexical retrieval has a structural ceiling there, because the evidence often doesn't share words with the question.
 
 ## Roadmap
 
 - [x] LoCoMo10 secondary benchmark
+- [x] LongMemEval-CN cross-lingual benchmark (Chinese questions; translation gap measured)
 - [x] Tag search and note deduplication
-- [x] Recall for weak types — weighted token/pair merge (0.4.0): assistant-quoted hit@1 1.8% → 17.9%, preference hit@1 16.7% → 26.7%
+- [x] 0.5.0 bug fixes — content-word-first tokenization (hit@1 54.6% → 74.8%), empty-token note leak, newline-safe note append
+- [x] Deterministic time-aware retrieval tested and rejected with published evidence (hard filtering hurts)
+- [ ] Chinese-session evaluation corpus (blocked: none exists publicly; also needs upstream CJK-aware tokenization)
 - [ ] End-to-end QA (retrieval + answer) on a 100-question subset — needs model-quota approval
-- [ ] Further recall work on assistant-quoted and preference questions (they remain the frontier)
+- [ ] Dense retrieval for the lexical ceiling (assistant-quoted / preference types) — deliberately out of scope while "zero infrastructure" holds
 
 ## Support & contributing
 
