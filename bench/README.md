@@ -216,6 +216,24 @@ These experiments are kept as reproducible evidence; no variant shipped.
 The benchmark epistemology (falsifier vs compass) is documented in the
 project's AGENTS.md.
 
+## Experiment log: stemming (exp5) — falsifier outcome
+
+`exp5.cjs` (S) / `exp5-m.cjs` (M segments) tested stem-phrase expansion using
+the authoritative `stemmer` npm package v2.0.1 (Titus Wormer, MIT; embedded
+with attribution and validated against Martin Porter's official 23,531-word
+vocabulary — 0 mismatches; the hand-rolled attempt was discarded after four
+debug rounds in favor of the existing wheel).
+
+- S1 (stems added without dedup): worse (hit@1 74.8% → 73.8%).
+- S2 (deduped stems): S hit@1 76.0% (+1.2), MRR 0.8187 (+0.007), but hit@5
+  −0.8 and preference −3.3.
+- M direction check (3×50-question segments): hit@1 identical to base in all
+  three segments; MRR deltas −0.001 / +0.000 / +0.007 — noise.
+
+**Not shipped.** The S-scale gain did not survive the M check; recorded as
+evidence that the shipped pipeline already covers this dataset's lexical
+variation.
+
 ## Chinese functional regression (NOT a benchmark)
 
 No public Chinese multi-session memory-retrieval corpus exists (checked:

@@ -4,6 +4,14 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.7.2 — 2026-08-20
+
+- `bench/exp5.cjs` / `exp5-m.cjs` published: stemming experiment using the
+  authoritative `stemmer` package (validated 0/23531 on Porter's official
+  vocabulary). S2 gained +1.2 hit@1 on S but the M direction check was noise
+  (hit@1 identical in all three segments) — not shipped. Falsifier outcome
+  recorded in bench/README.
+
 ## 0.7.1 — 2026-08-20
 
 - CJK detection unified: the tokenizer now uses `\p{Script=Han}` (same as
