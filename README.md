@@ -57,16 +57,17 @@ DeepSeek Harness already records every session, message, and tool call. Memo tur
 
 External memory frameworks (Mem0, Letta, etc.) embed and re-store your data in infrastructure they manage; Memo keeps DSH's own store as the single source of truth and adds nothing to operate. If you need cross-app memory outside DSH, those tools are the better fit.
 
-## Trust: the evidence trail
+## A note from the maintainer, before the claims
 
-The differentiator is not a claim — it's that every claim can be checked:
+I started Memo because I kept getting burned by memory tools whose benchmark numbers I couldn't reproduce. So this project runs on one rule, stated plainly: **publish only what the shipped product measures, and publish the trail that produced it.** What that means in practice:
 
-- **Every number is the shipped product's own.** The benchmark harnesses in [`bench/`](bench/README.md) reproduce the exact pipeline `memo_search` runs — page sizes, ranking, truncation — not an idealized variant. Rerun them with the same dataset bytes and you get the same numbers; the environment is recorded.
-- **Rejected experiments are published.** The variant log shows the dead ends, not just the winner: equal-weight bigrams collapsed hit@1 to 5.2%, a wider per-term page wasn't worth 2× the API calls. You can see what was tried and why it lost.
-- **Mistakes are corrected in the open.** CHANGELOG records the self-corrections: session ids read from the wrong field (0.3.0), titles silently nulled (0.3.1), benchmark numbers re-measured **down** when the harness was found to over-collect candidates (0.3.1), then **up** when the algorithm actually improved (0.4.0) and again when three real bugs were fixed (0.5.0): stopwords crowding out content words (hit@1 54.6% → 74.8%), Chinese queries returning the entire notes store, and hand-edited notes files corrupting on append. No quietly rewritten history.
-- **Promising ideas are tested, not assumed.** The LongMemEval paper's time-aware query expansion was re-implemented deterministically and measured: hard time filtering *hurts* (temporal hit@1 75.9% → 69.9%), soft variants are neutral — so none shipped, and the full experiment is published in [`bench/`](bench/README.md).
-- **Scope is stated, not implied.** Session localization is not end-to-end answer accuracy; the weak question types are named; the 2× backend-call cost of the 0.4.0 algorithm is disclosed up front.
-- **No strawman baselines.** You will never find a comparison row for a process this product does not run, or a third-party self-reported figure presented as a reference.
+- **The benchmark harnesses are copies of the real pipeline** — page sizes, ranking, truncation — not a re-implementation of the idea. Same dataset bytes, same numbers; environment recorded. When I once caught the harness over-collecting candidates that the product could never see, the published numbers went *down* (0.3.1), not up.
+- **Rejected experiments are published too.** The equal-weight bigram variant collapsed hit@1 to 5.2%; the wider per-term page wasn't worth 2× the API calls; a deterministic re-implementation of a time-aware expansion idea from a paper I respect made temporal recall *worse* — and that one is in the log with the exact numbers, because negative results are results.
+- **My mistakes are in the CHANGELOG, not deleted.** Session ids read from the wrong field (0.3.0), titles silently nulled (0.3.1), and three bugs found by review in 0.5.0 — one of which, stopwords crowding content words out of the query window, meant the headline recall number was understated for two releases. Fixed, re-measured, and written down.
+- **Limitations are stated where they hurt.** Session localization is not end-to-end answer accuracy. The two weakest question types are named with their numbers. The length-as-rarity weighting rests on an English regularity — long word ≈ content word — and does **not** transfer to Chinese; declared below, not hidden. Chinese queries hit the backend's unicode61 CJK limitation and get a `cjkWarning` instead of silent misses.
+- **No strawman baselines, no borrowed numbers.** You will not find a comparison row for a process this product does not run, or a third-party self-reported figure presented as a reference.
+
+If you find a number here that doesn't reproduce, that is the highest-value bug report this project can receive — please [open an issue](https://github.com/lesliechowsh/dsh-memo/issues).
 
 ## Requirements
 
@@ -263,7 +264,13 @@ Measured on three evaluations under the exact pipeline `memo_search` ships — p
 
 **LongMemEval-CN cross-lingual** (Chinese questions over the original English haystacks): **hit@1 33.6%** — and that number comes entirely from Latin tokens left untranslated in the questions; pure-Chinese queries cannot match English sessions, and no tokenizer change fixes that (the gap is translation). `memo_search` detects Chinese queries and returns a `cjkWarning` about the backend's unicode61 CJK limitation instead of pretending; a Chinese-session evaluation corpus does not exist publicly yet.
 
-**Scope:** these measure session localization — whether the gold session appears in the top-k — not end-to-end answer accuracy, and not the LongMemEval paper's M-scale (500-session) Recall@k protocol. The weak types (assistant-quoted, preference) remain the frontier: lexical retrieval has a structural ceiling there, because the evidence often doesn't share words with the question.
+**Scope — read these numbers for what they are:**
+
+- These are **session-localization** hit@k numbers (does the gold session enter the top-k of ~54 and ~27-session pools), not end-to-end answer accuracy. Do not compare them with the end-to-end QA accuracy reported by systems like Mem0 / Zep / LangMem (LLM reader + judge pipelines) — that is a different quantity.
+- **Random baselines for signal-to-noise**: on LongMemEval-S a random retriever gets hit@1 ≈ 1.9% (1/54); Memo's 74.8% is ≈ 40× that. On LoCoMo10 a random retriever gets hit@1 ≈ 3.7% (1/27); Memo's 53.2% is ≈ 14× that. **On LoCoMo10, prefer hit@1**: with ~27-session pools, random hit@10 is already ≈ 37%, so the hit@10 column carries little information there.
+- **Not comparable to the LongMemEval paper's retrieval table.** Its BM25 (R@5 63–68%) and Contriever/Stella dense retrievers (R@5 72–76%) run on the 500-session M scale with Recall@k. Memo's hit@5 on the 54-session S scale is numerically similar — but the pool is ~10× smaller and hit@k is a looser protocol, so **no claim of parity with dense retrievers follows**. Memo is a sparse lexical retriever near its class's ceiling; it does not compete with vector/graph memory systems.
+- **Known ceilings**: knowledge-update (hit@1 91.0%) works because question and evidence share words; assistant-quoted and preference questions (51.8% / 33.3%) are the lexical floor — their evidence often shares no words with the question, and no tokenizer or weight tuning closes a semantic gap.
+- **English-specific assumption**: the length-as-rarity weighting ("long word ≈ content word") is an English statistical regularity. It does not transfer to Chinese (and the backend's unicode61 index has its own CJK limitation — see [Requirements](#requirements)).
 
 ## Roadmap
 

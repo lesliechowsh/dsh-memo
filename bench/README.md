@@ -120,6 +120,23 @@ Other protocol facts:
   nor to end-to-end QA accuracy numbers reported by agent systems (Chronos,
   MemPalace etc.). The README states this scope explicitly.
 
+### Reading the numbers (statistical context)
+
+- **Random baselines**: LongMemEval-S pools have 54 sessions, so random
+  hit@1 ≈ 1/54 ≈ 1.9% (Memo 74.8% → ≈40×); LoCoMo10 pools average ≈27
+  sessions, so random hit@1 ≈ 1/27 ≈ 3.7% (Memo 53.2% → ≈14×). Random
+  hit@10 on LoCoMo10 is already ≈ 37%, which is why the README points to
+  hit@1 as the informative metric there.
+- **Pool-size caveat**: Memo's hit@5 on the S scale (54-session pools) is
+  numerically near the paper's dense retrievers on the M scale (500-session
+  pools, Recall@k protocol) — but a ~10× smaller pool and a looser hit@k
+  protocol make direct comparison invalid. No claim of parity with dense or
+  vector/graph retrievers is made anywhere.
+- **English-specific assumption**: the token/pair length weighting rests on
+  the English regularity "long word ≈ content word". It does not transfer to
+  Chinese; a Chinese-session evaluation would need its own weighting (and is
+  blocked on upstream CJK tokenization anyway — see below).
+
 ## Results (shipped 0.5.0 pipeline)
 
 - LongMemEval-S: hit@1 74.8% · hit@5 89.8% · hit@10 95.2% · MRR 0.8116.
