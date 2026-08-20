@@ -65,12 +65,12 @@ return {
     // ---------- memo_search ----------
     const searchTool = harness.defineTool({
       name: 'memo_search',
-      description: 'Search all of your DSH session history and memo notes. Full-text recall across every session you ever had in this workspace (official sessionQuery ranking with snippets), plus your distilled memo notes. Use it whenever a question involves what was said, decided, or built before — in this or any other session.',
+      description: 'Search every past session in this workspace plus your memo notes. Use it whenever answering depends on what was said, decided, or built in any earlier session.',
       parameters: {
-        query: { type: 'string', required: true, description: 'Plain-language search query; matched against session event text and memo notes.' },
-        limit: { type: 'number', description: 'Maximum results per source (sessions and notes). Default 10, cap 50.' },
-        sessionId: { type: 'string', description: 'Restrict the search to one session id.' },
-        since: { type: 'number', description: 'Only events after this epoch-ms timestamp.' },
+        query: { type: 'string', required: true, description: 'Search terms; matched against session text and memo notes.' },
+        limit: { type: 'number', description: 'Max hits per source. Default 10, cap 50.' },
+        sessionId: { type: 'string', description: 'Limit the search to this session.' },
+        since: { type: 'number', description: 'Only hits after this epoch-ms time.' },
       },
       output: textOutput(),
       execute: async (args, exec) => {
@@ -134,10 +134,10 @@ return {
     // ---------- memo_remember ----------
     const rememberTool = harness.defineTool({
       name: 'memo_remember',
-      description: 'Write one distilled note into your durable memo store (separate from raw session logs). Use it for durable facts, decisions, preferences, and conventions that should survive across sessions. Notes are also returned by memo_search.',
+      description: 'Write one durable note to the memo store. Use for facts, decisions, preferences, and conventions that must survive across sessions; memo_search returns these notes.',
       parameters: {
-        text: { type: 'string', required: true, description: 'The note content — one concrete fact, decision, or preference.' },
-        tags: { type: 'string', description: 'Optional comma-separated tags for organization.' },
+        text: { type: 'string', required: true, description: 'The note — one concrete fact, decision, or preference.' },
+        tags: { type: 'string', description: 'Comma-separated tags.' },
       },
       output: textOutput(),
       execute: async (args, exec) => {
@@ -156,7 +156,7 @@ return {
     // ---------- memo_stats ----------
     const statsTool = harness.defineTool({
       name: 'memo_stats',
-      description: 'Overview of your memory corpus: how many sessions exist in this workspace, the most recent session titles, and how many memo notes are stored.',
+      description: 'Corpus overview: total sessions, five most recent session titles, memo-note count.',
       parameters: {},
       output: textOutput(),
       execute: async (args, exec) => {
