@@ -3,50 +3,65 @@
 //   memo_search   — search every past session + memo notes
 //   memo_remember — write one durable note (facts, decisions, preferences)
 //   memo_stats    — corpus overview
-// Notes live at $DSH_HOME/memo/notes.jsonl, resolved per execution via
-// shellEnv.collect(exec) — no machine paths, no process access.
+//
+// Contract notes (do not regress):
+//   - searchSessions hits are SessionRecord = { header, live, persisted, bestMatch };
+//     the session id lives at hit.header.id, NOT hit.id.
+//   - searchEvents hits carry sessionId directly.
+//   - SessionHeader has no title; fold titles via readTitleSnapshots.
+//   - Notes are appended raw (never rewritten from parsed rows) so hand-edited
+//     or malformed lines survive.
+//   - DSH_HOME resolves per execution via shellEnv.collect(exec) — no cache,
+//     no machine paths.
 exports.name = "dsh-memo";
 exports.inject = ["tools", "sessionQuery", "fs", "shellEnv"];
 
 exports.apply = function (ctx) {
-  let cachedNotesPath = null;
-
   function resolveNotesPath(exec) {
-    if (cachedNotesPath !== null) return cachedNotesPath;
     try {
       const env = ctx.shellEnv.collect(exec);
       if (env !== null && typeof env === "object" && typeof env.DSH_HOME === "string" && env.DSH_HOME !== "") {
-        cachedNotesPath = env.DSH_HOME.replace(/\/+$/, "") + "/memo/notes.jsonl";
-        return cachedNotesPath;
+        return env.DSH_HOME.replace(/\/+$/, "") + "/memo/notes.jsonl";
       }
     } catch (err) { /* fall through */ }
     return null;
   }
 
-  async function readNotes(path) {
-    if (path === null) return [];
+  async function readNotesText(path) {
+    if (path === null) return "";
     try {
       const target = await ctx.fs.resolve(path);
-      const text = await ctx.fs.readText(target);
-      const rows = [];
-      for (const line of text.split("\n")) {
-        const t = line.trim();
-        if (t === "") continue;
-        try { rows.push(JSON.parse(t)); } catch (err) { /* skip malformed */ }
-      }
-      return rows;
-    } catch (err) { return []; }
+      return await ctx.fs.readText(target);
+    } catch (err) { return ""; }
+  }
+
+  function parseNotes(text) {
+    const rows = [];
+    for (const line of text.split("\n")) {
+      const t = line.trim();
+      if (t === "") continue;
+      try { rows.push(JSON.parse(t)); } catch (err) { /* malformed lines survive on disk */ }
+    }
+    return rows;
   }
 
   async function appendNote(path, record) {
     if (path === null) return false;
-    try {
-      const existing = await readNotes(path);
-      existing.push(record);
-      const target = await ctx.fs.resolve(path);
-      await ctx.fs.writeText(target, existing.map((r) => JSON.stringify(r)).join("\n") + "\n");
-      return true;
-    } catch (err) { return false; }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const raw = await readNotesText(path);
+        const target = await ctx.fs.resolve(path);
+        await ctx.fs.writeText(target, raw + JSON.stringify(record) + "\n");
+        return true;
+      } catch (err) { /* retry */ }
+    }
+    return false;
+  }
+
+  function noteMatches(note, tokens) {
+    const text = String(note.text || "").toLowerCase();
+    if (tokens.length <= 1) return text.includes(tokens[0] || "");
+    return tokens.every((t) => text.includes(t));
   }
 
   const textOutput = () => ({
@@ -55,6 +70,22 @@ exports.apply = function (ctx) {
       return [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }];
     },
   });
+
+  async function enrichTitles(hits) {
+    const ids = [...new Set(hits.map((h) => h.sessionId).filter((id) => id !== undefined && id !== null && id !== ""))];
+    if (ids.length === 0) return;
+    try {
+      const rows = await ctx.sessionQuery.readTitleSnapshots(ids.map(String));
+      const titles = {};
+      for (const row of rows || []) {
+        const value = row && typeof row === "object" ? (row.value ?? row) : null;
+        const id = value && (value.id ?? (value.header && value.header.id) ?? (value.session && value.session.id));
+        const title = value && (value.title ?? (value.titleSnapshot && value.titleSnapshot.title));
+        if (id !== undefined && id !== null) titles[String(id)] = typeof title === "string" ? title : null;
+      }
+      for (const hit of hits) hit.title = titles[String(hit.sessionId)] ?? null;
+    } catch (err) { /* titles optional */ }
+  }
 
   async function phraseSearch(query, limit, sessionId, since) {
     if (sessionId !== undefined) {
@@ -73,15 +104,15 @@ exports.apply = function (ctx) {
     });
     return (page.items || []).map((hit) => {
       const bm = hit.bestMatch || {};
-      return { sessionId: hit.id ?? hit.sessionId, title: null, snippet: bm.snippet ?? "", time: bm.time ?? null, seq: bm.seq ?? null, source: "event", mode: "phrase" };
+      return { sessionId: (hit.header && hit.header.id) ?? null, title: null, snippet: bm.snippet ?? "", time: bm.time ?? null, seq: bm.seq ?? null, source: "event", mode: "phrase" };
     });
   }
 
   async function tokenizedSearch(query, limit, since) {
-    const terms = [...new Set(String(query).toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))].slice(0, 8);
-    if (terms.length <= 1) return [];
+    const tokens = [...new Set(String(query).toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))].slice(0, 8);
+    if (tokens.length <= 1) return [];
     const collected = new Map();
-    for (const term of terms) {
+    for (const term of tokens) {
       let page;
       try {
         page = await ctx.sessionQuery.searchSessions({
@@ -91,7 +122,7 @@ exports.apply = function (ctx) {
         });
       } catch (err) { continue; }
       for (const hit of page.items || []) {
-        const id = String(hit.id ?? hit.sessionId ?? "");
+        const id = (hit.header && hit.header.id) ? String(hit.header.id) : "";
         if (id === "") continue;
         const bm = hit.bestMatch || {};
         const cur = collected.get(id);
@@ -126,6 +157,7 @@ exports.apply = function (ctx) {
         const merged = [];
         const seen = new Set();
         for (const hit of phrase) {
+          if (hit.sessionId === null || hit.sessionId === undefined) continue;
           seen.add(String(hit.sessionId));
           merged.push(hit);
         }
@@ -138,17 +170,14 @@ exports.apply = function (ctx) {
           }
         }
         result.sessions = merged.slice(0, limit);
+        await enrichTitles(result.sessions);
       } catch (err) {
         result.error = "search failed: " + String((err && err.message) || err);
       }
       try {
-        const q = String(args.query || "").toLowerCase();
-        const notes = await readNotes(resolveNotesPath(exec));
-        if (q !== "") {
-          result.notes = notes.filter((n) => String(n.text || "").toLowerCase().includes(q)).slice(-limit).reverse();
-        } else {
-          result.notes = notes.slice(-limit).reverse();
-        }
+        const tokens = [...new Set(String(args.query || "").toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))].slice(0, 8);
+        const notes = parseNotes(await readNotesText(resolveNotesPath(exec)));
+        result.notes = notes.filter((n) => noteMatches(n, tokens)).slice(-limit).reverse();
       } catch (err) { /* notes optional */ }
       return result;
     },
@@ -191,13 +220,14 @@ exports.apply = function (ctx) {
         const sessions = await ctx.sessionQuery.listSessions();
         sessionCount = sessions.length;
         recent = sessions.slice(0, 5).map((s) => ({
-          id: s.id ?? null,
-          cwd: s.cwd ?? null,
-          createdAt: s.createdAt ?? null,
-          title: s.title ?? null,
+          id: (s.header && s.header.id) ?? null,
+          cwd: (s.header && s.header.cwd) ?? null,
+          createdAt: (s.header && s.header.createdAt) ?? null,
+          title: null,
         }));
+        await enrichTitles(recent);
       } catch (err) { /* keep zeros */ }
-      const notes = await readNotes(resolveNotesPath(exec));
+      const notes = parseNotes(await readNotesText(resolveNotesPath(exec)));
       return { sessions: sessionCount, recent, notes: notes.length };
     },
   });

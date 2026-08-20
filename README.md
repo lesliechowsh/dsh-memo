@@ -113,18 +113,20 @@ Writing (`memo_remember`) and reading (`memo_search`) follow the survey's memory
 
 ## Benchmark
 
-Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813) (500 questions, 54-session haystacks per question), session-level retrieval with SQLite FTS5/BM25 — the same engine class as DSH's official session search. Full protocol and environment: [`bench/`](bench/README.md).
+Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813) (500 questions, 54-session haystacks per question), session-level retrieval under the exact algorithm `memo_search` ships — phrase-first plus per-term matched-count merge — reproduced in the harness over the same FTS5 engine class the official backend uses. Full protocol and environment: [`bench/`](bench/README.md).
 
-**Overall: hit@1 86.6% · hit@5 97.0% · hit@10 98.8% · MRR 0.911**
+**Overall: hit@1 45.8% · hit@5 75.4% · hit@10 84.4% · MRR 0.582**
 
 | Question type | n | hit@1 | hit@5 | MRR |
 |---|---|---|---|---|
-| multi-session | 133 | 87.2% | 97.7% | 0.913 |
-| temporal-reasoning | 133 | 82.7% | 98.5% | 0.883 |
-| knowledge-update | 78 | 94.9% | 100.0% | 0.971 |
-| single-session-user | 70 | 87.1% | 100.0% | 0.923 |
-| single-session-assistant | 56 | 100.0% | 100.0% | 1.000 |
-| single-session-preference | 30 | 53.3% | 96.7% | 0.670 |
+| multi-session | 133 | 48.9% | 87.2% | 0.641 |
+| temporal-reasoning | 133 | 39.1% | 72.9% | 0.540 |
+| knowledge-update | 78 | 80.8% | 93.6% | 0.872 |
+| single-session-user | 70 | 60.0% | 92.9% | 0.737 |
+| single-session-assistant | 56 | 3.6% | 16.1% | 0.082 |
+| single-session-preference | 30 | 16.7% | 56.7% | 0.321 |
+
+**Scope:** this measures session localization — whether the gold session appears in the top-k — not end-to-end answer accuracy, which is a separate roadmap item. The weak types (assistant-quoted answers, preferences) are the known frontier.
 
 ## Roadmap
 

@@ -113,18 +113,20 @@ Memo 的定位落在 [《Memory for Large Language Models》](https://arxiv.org/
 
 ## Benchmark
 
-在 [LongMemEval-S](https://arxiv.org/abs/2410.10813)（500 个问题，每题 54 个干扰会话）上实测，会话级检索、SQLite FTS5/BM25——与 DSH 官方会话搜索同引擎级别。完整协议与环境：[`bench/`](bench/README.md)。
+在 [LongMemEval-S](https://arxiv.org/abs/2410.10813)（500 个问题，每题 54 个干扰会话）上实测，会话级检索，评测脚本忠实复刻 `memo_search` 内置算法（短语优先 + 逐词命中数合并），跑在与官方后端同类的 FTS5 引擎上。完整协议与环境：[`bench/`](bench/README.md)。
 
-**总成绩：hit@1 86.6% · hit@5 97.0% · hit@10 98.8% · MRR 0.911**
+**总成绩：hit@1 45.8% · hit@5 75.4% · hit@10 84.4% · MRR 0.582**
 
 | 题型 | n | hit@1 | hit@5 | MRR |
 |---|---|---|---|---|
-| multi-session | 133 | 87.2% | 97.7% | 0.913 |
-| temporal-reasoning | 133 | 82.7% | 98.5% | 0.883 |
-| knowledge-update | 78 | 94.9% | 100.0% | 0.971 |
-| single-session-user | 70 | 87.1% | 100.0% | 0.923 |
-| single-session-assistant | 56 | 100.0% | 100.0% | 1.000 |
-| single-session-preference | 30 | 53.3% | 96.7% | 0.670 |
+| multi-session | 133 | 48.9% | 87.2% | 0.641 |
+| temporal-reasoning | 133 | 39.1% | 72.9% | 0.540 |
+| knowledge-update | 78 | 80.8% | 93.6% | 0.872 |
+| single-session-user | 70 | 60.0% | 92.9% | 0.737 |
+| single-session-assistant | 56 | 3.6% | 16.1% | 0.082 |
+| single-session-preference | 30 | 16.7% | 56.7% | 0.321 |
+
+**口径说明：** 本评测测量"会话定位"——金标会话是否进入 top-k——而非端到端答题准确率（后者是路线图单列项）。弱项题型（助手复述类、偏好类）是已知前沿。
 
 ## 路线图
 
