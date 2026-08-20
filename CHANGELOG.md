@@ -4,6 +4,16 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.7.3 — 2026-08-20
+
+- LongMemEval-CN cross-lingual re-measured with the shipped 0.7.0 tokenizer
+  (cn.cjs gained an A2 variant): hit@1 33.6% → **44.4%**, every question type
+  up. Mechanism: for mixed queries with a single untranslated Latin token,
+  the pre-0.7.0 tokenizer produced ≤1 tokens and skipped the weighted step;
+  the CJK runs now push the token count above 1, so the Latin token actually
+  gets queried. Pure-Chinese queries over English sessions still cannot match
+  (translation remains the gap).
+
 ## 0.7.2 — 2026-08-20
 
 - `bench/exp5.cjs` / `exp5-m.cjs` published: stemming experiment using the

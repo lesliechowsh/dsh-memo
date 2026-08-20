@@ -126,7 +126,7 @@ per-type rank order is **identical** across the two independent question sets �
 the expected signature of a real algorithm, not one tuned to S. The pipeline
 was selected on S only; M was run once, after the fact.
 
-**LongMemEval-CN cross-lingual** (Chinese questions over the original English haystacks): **hit@1 33.6%**, entirely from Latin tokens left untranslated in the questions — the gap is translation, not tokenization. A Chinese-session evaluation corpus does not exist publicly yet.
+**LongMemEval-CN cross-lingual** (Chinese questions over the original English haystacks): **hit@1 44.4%** (up from 33.6% before the 0.7.0 CJK tokenization — CJK runs unblock the weighted step for mixed queries, so single untranslated Latin tokens are now actually queried). Every gain still comes from those Latin tokens: pure-Chinese queries over English sessions cannot match, and the gap is translation, not tokenization. A Chinese-session evaluation corpus does not exist publicly yet.
 
 **Scope — read these numbers for what they are:**
 

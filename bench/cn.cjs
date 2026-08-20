@@ -47,6 +47,21 @@ function tokenizeCjk(text) {
   return [...new Set(out)];
 }
 
+// Shipped 0.7.0 tokenizer: ASCII content words first, then CJK runs, then
+// stopwords (the actual product behavior since 0.7.0).
+function tokenizeShipped(text) {
+  const src = String(text).toLowerCase();
+  const ascii = [...new Set(src.split(/[^a-z0-9]+/).filter((t) => t.length >= 2))];
+  const content = ascii.filter((t) => !STOP_WORDS.has(t));
+  const stops = ascii.filter((t) => STOP_WORDS.has(t));
+  const cjk = [];
+  for (const m of src.matchAll(/\p{Script=Han}+/gu)) {
+    const run = m[0];
+    if (run.length >= 2 && !cjk.includes(run)) cjk.push(run);
+  }
+  return [...content, ...cjk, ...stops].slice(0, 8);
+}
+
 function seq(text) {
   return String(text).toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 1);
 }
@@ -183,7 +198,7 @@ function main() {
   const match = db.prepare("SELECT id FROM docs WHERE docs MATCH ? LIMIT 500");
 
   const stat = () => ({ n: 0, hit1: 0, hit5: 0, hit10: 0, mrr: 0, byType: new Map() });
-  const stats = { A: stat(), B: stat() };
+  const stats = { A: stat(), A2: stat(), B: stat() };
   const record = (variant, type, rank) => {
     const s = stats[variant];
     s.n += 1;
@@ -214,6 +229,8 @@ function main() {
 
     const ra = evalOne(match, bySession, question, gold, tokenizeAscii);
     record("A", String(entry.question_type || "unknown"), ra);
+    const ra2 = evalOne(match, bySession, question, gold, tokenizeShipped);
+    record("A2", String(entry.question_type || "unknown"), ra2);
     const rb = evalOne(match, bySession, question, gold, tokenizeCjk);
     record("B", String(entry.question_type || "unknown"), rb);
   }
@@ -221,15 +238,17 @@ function main() {
   console.log("=== LongMemEval-CN cross-lingual (Chinese questions over English haystacks) ===");
   for (const [name, s] of Object.entries(stats)) {
     const pct = (n) => (s.n === 0 ? 0 : ((n / s.n) * 100).toFixed(1) + "%");
-    console.log(`${name === "A" ? "A shipped-tokenizer " : "B cjk-run-tokenizer"} n=${String(s.n).padEnd(4)} hit@1 ${pct(s.hit1)}  hit@5 ${pct(s.hit5)}  hit@10 ${pct(s.hit10)}  MRR ${(s.mrr / Math.max(1, s.n)).toFixed(4)}`);
+    const label = name === "A" ? "A ascii-only(pre-0.7) " : name === "A2" ? "A2 shipped(0.7.0)     " : "B cjk-only            ";
+    console.log(`${label} n=${String(s.n).padEnd(4)} hit@1 ${pct(s.hit1)}  hit@5 ${pct(s.hit5)}  hit@10 ${pct(s.hit10)}  MRR ${(s.mrr / Math.max(1, s.n)).toFixed(4)}`);
   }
-  console.log("per-type (A hit@1 / B hit@1):");
+  console.log("per-type (A / A2 / B hit@1):");
   const typeNames = new Set([...stats.A.byType.keys(), ...stats.B.byType.keys()]);
   for (const type of [...typeNames].sort()) {
     const a = stats.A.byType.get(type);
+    const a2 = stats.A2.byType.get(type);
     const b = stats.B.byType.get(type);
     const f = (t) => (t ? `${((t.hit1 / t.n) * 100).toFixed(1)}% (n=${t.n})` : "-");
-    console.log(`  ${type.padEnd(24)} A ${f(a).padEnd(14)} B ${f(b)}`);
+    console.log(`  ${type.padEnd(24)} A ${f(a).padEnd(14)} A2 ${f(a2).padEnd(14)} B ${f(b)}`);
   }
 }
 

@@ -164,9 +164,11 @@ Other protocol facts:
   order matches S exactly (knowledge-update strongest, preference weakest),
   the expected signature of an algorithm that was selected on S and held up
   on a fresh 500-question, 10×-larger-pool set.
-- LongMemEval-CN cross-lingual (see below): hit@1 33.6% — entirely from
-  untranslated Latin tokens; pure-Chinese queries over English sessions
-  cannot match, and no tokenizer change fixes that (the gap is translation).
+- LongMemEval-CN cross-lingual (see below): hit@1 44.4% with the shipped
+  0.7.0 tokenizer (33.6% before CJK runs were added — they unblock the
+  weighted step for mixed queries). All gains come from untranslated Latin
+  tokens; pure-Chinese queries over English sessions cannot match, and no
+  tokenizer change fixes that (the gap is translation).
 
 ## Chinese / CJK status (honest)
 
@@ -184,10 +186,11 @@ Measured consequences:
   sessions sharing ANY verbatim run of a Chinese question are recalled.
   `cjkWarning` still reports the remaining limit (no sub-run tokens).
 - The CN cross-lingual harness makes the translation gap measurable:
-  variant A (shipped tokenizer) reaches 33.6% hit@1 purely via Latin tokens
-  left untranslated in the questions (proper nouns, brands, numbers); variant
-  B (CJK-run tokenizer) scores 0.0% because Chinese runs cannot match English
-  text. A Chinese-session evaluation corpus does not exist publicly yet
+  variant A (pre-0.7.0 tokenizer) reaches 33.6% hit@1 purely via Latin
+  tokens left untranslated in the questions; variant A2 (the shipped 0.7.0
+  tokenizer) reaches 44.4% — the CJK runs unblock the weighted step for
+  single-Latin-token mixed queries; variant B (CJK-only tokenizer) scores
+  0.0% because Chinese runs cannot match English text. A Chinese-session evaluation corpus does not exist publicly yet
   (checked longmemeval-cn, MemLong, LoCoMo); once one exists — or once the
   upstream backend gains CJK-aware tokenization — the harness pattern here
   applies directly.
