@@ -4,6 +4,18 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.7.0 — 2026-08-20
+
+- **Chinese query support** — the tokenizer now extracts contiguous Han runs
+  (len ≥ 2) as weighted query phrases, matching the backend unicode61 index's
+  own token granularity. Before this, CJK queries produced zero tokens and
+  the weighted step was skipped entirely. Result: a Chinese session is found
+  when any run of the question appears verbatim. Word-level recall inside a
+  run still needs an upstream tokenizer change; `cjkWarning` says so.
+- **New** `bench/zh.cjs` — a self-built deterministic Chinese functional
+  regression set (clearly labeled NOT a benchmark): pre-0.7.0 0/11, 0.7.0
+  10/11 hit@1, with one ceiling control missed by both.
+
 ## 0.6.0 — 2026-08-20
 
 - **LongMemEval-M anti-overfitting check** — the shipped pipeline, unchanged,

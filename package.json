@@ -1,6 +1,6 @@
 {
   "name": "dsh-memo",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Memo — session memory search for DeepSeek Harness agents: cross-session full-text recall (memo_search), distilled notes (memo_remember), and corpus stats (memo_stats) over the official sessionQuery service. Zero infrastructure, local-first.",
   "main": "index.js",
   "files": [
@@ -15,7 +15,8 @@
     "SECURITY.md",
     "bench/cn.cjs",
     "bench/exp3.cjs",
-    "bench/run-m.cjs"
+    "bench/run-m.cjs",
+    "bench/zh.cjs"
   ],
   "keywords": [
     "dsh",

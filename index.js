@@ -23,9 +23,21 @@ exports.apply = function (ctx) {
   // length-weighted merge even rewarded some of them.
   const STOP = new Set(["the", "a", "an", "and", "or", "what", "did", "do", "does", "is", "are", "was", "were", "to", "of", "in", "on", "at", "for", "with", "about", "we", "you", "i", "it", "this", "that", "how", "when", "where", "which", "why", "be", "been", "from", "by", "as", "there", "not", "can", "could", "should", "would", "just", "also"]);
   function tokenize(text) {
-    const all = [...new Set(String(text).toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))];
-    const content = all.filter((t) => !STOP.has(t));
-    return [...content, ...all.filter((t) => STOP.has(t))].slice(0, 8);
+    const src = String(text).toLowerCase();
+    const ascii = [...new Set(src.split(/[^a-z0-9]+/).filter((t) => t.length >= 2))];
+    const content = ascii.filter((t) => !STOP.has(t));
+    const stops = ascii.filter((t) => STOP.has(t));
+    // CJK: the backend's unicode61 index tokenizes contiguous Han runs as
+    // single tokens, so we extract the same runs (len >= 2) as query
+    // phrases. Character-level recall inside a run is impossible without an
+    // index-side change — exact runs only, which is still strictly more
+    // than the old behavior (CJK queries produced zero tokens).
+    const cjk = [];
+    for (const m of src.matchAll(/[\u3400-\u9fff]+/g)) {
+      const run = m[0];
+      if (run.length >= 2 && !cjk.includes(run)) cjk.push(run);
+    }
+    return [...content, ...cjk, ...stops].slice(0, 8);
   }
 
   function resolveNotesPath(exec) {
@@ -233,7 +245,7 @@ exports.apply = function (ctx) {
         result.notes = notes.filter((n) => noteMatches(n, tokens, tags)).slice(-limit).reverse();
       } catch (err) { /* notes optional */ }
       if (/\p{Script=Han}/u.test(String(args.query || ""))) {
-        result.cjkWarning = "query contains Chinese: the session-query backend (unicode61 FTS5) indexes contiguous CJK runs only, so Chinese recall is limited to exact verbatim runs; index-side fix belongs upstream (see bench/README)";
+        result.cjkWarning = "query contains Chinese: recall works at the granularity of contiguous Han runs (the backend unicode61 index has no sub-run tokens); sessions are found when a run of the query appears verbatim, word-level search inside runs needs an upstream tokenizer change (see bench/README)";
       }
       return result;
     },

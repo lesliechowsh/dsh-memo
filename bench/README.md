@@ -179,8 +179,10 @@ Measured consequences:
   the upstream `session-query` backend, not something a plugin can fix
   without re-indexing (which would break Memo's "re-indexes nothing" core
   promise).
-- `memo_search` therefore detects CJK in the query and returns a
-  `cjkWarning` describing the limitation instead of pretending.
+- Since 0.7.0, `memo_search` extracts the query's Han runs (len ≥ 2) as
+  weighted phrases — matching the backend's own token granularity — so
+  sessions sharing ANY verbatim run of a Chinese question are recalled.
+  `cjkWarning` still reports the remaining limit (no sub-run tokens).
 - The CN cross-lingual harness makes the translation gap measurable:
   variant A (shipped tokenizer) reaches 33.6% hit@1 purely via Latin tokens
   left untranslated in the questions (proper nouns, brands, numbers); variant
@@ -191,6 +193,24 @@ Measured consequences:
   applies directly.
 - Upstream tracking: `deepseek-ai/deepseek-harness` has issues disabled;
   the limitation is documented here until an upstream channel accepts it.
+
+## Chinese functional regression (NOT a benchmark)
+
+No public Chinese multi-session memory-retrieval corpus exists (checked:
+longmemeval-cn ships questions+results only, MemLong's data repo is gone,
+LoCoMo is English), so benchmark-level Chinese numbers stay blocked. Instead
+`zh.cjs` is a self-built, deterministic, embedded regression set — 10
+hand-written sessions, 11 multi-run queries whose gold sessions contain one
+verbatim run each, plus one ceiling control with no verbatim run anywhere:
+
+```sh
+node bench/zh.cjs
+```
+
+Result: pre-0.7.0 tokenizer 0/11; the 0.7.0 CJK-run tokenizer 10/11 hit@1
+(the ceiling control misses in both, demonstrating the run-granularity
+limit). Same bytes, same numbers — but treat it as a functional test, never
+as a published benchmark.
 
 ## Experiment log (variant selection evidence)
 

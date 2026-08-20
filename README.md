@@ -55,7 +55,7 @@ Search every past session in the workspace plus your memo notes. `limit` default
 
 - `sessions`: `{ sessionId, title (null when untitled), snippet, time, mode }` — ordered phrase-first, then by weighted token/pair score; `mode` is `"phrase"` (verbatim question hit) or `"terms"`.
 - `notes`: most recent matches, newest last.
-- When the deployment's session-query index is closed or the service is missing, the result carries an `error` string instead of fabricated hits — and Chinese queries carry a `cjkWarning` (see [Requirements](#requirements)).
+- When the deployment's session-query index is closed or the service is missing, the result carries an `error` string instead of fabricated hits. Chinese queries get run-level recall (contiguous Han runs as weighted phrases) plus a `cjkWarning` describing the remaining limit — see [Requirements](#requirements).
 
 ### `memo_remember(text, tags?)`
 
@@ -70,7 +70,7 @@ Corpus overview, no parameters: `{ sessions: 19, recent: […], notes: 4 }`.
 ```
   memo_search(query)
    1. phrase step    whole query as one FTS5 phrase → top 10 sessions
-   2. weighted step  ≤8 tokens + consecutive pairs, top 10 each,
+   2. weighted step  ≤8 tokens (content words + CJK runs) +
                      merged by summed weights (token/pair length),
                      time-desc tiebreak — content words fill the
                      window first, stopwords only leftovers
@@ -151,7 +151,7 @@ If you find a number here that doesn't reproduce, that is the highest-value bug 
 ## Requirements
 
 - **DeepSeek Harness** with the `sessionQuery` service (shipped in the standard `web` profile); the deployment's session-query index must be open — `memo_search` reports a closed index honestly instead of guessing.
-- **Chinese / CJK**: the backend's unicode61 FTS5 index treats contiguous CJK runs as single tokens, so Chinese sessions are searchable only by exact verbatim runs; `memo_search` returns a `cjkWarning`. The fix is index-side and belongs upstream (details in [`bench/`](bench/README.md)).
+- **Chinese / CJK**: the backend's unicode61 index stores contiguous Han runs as single tokens. Memo searches those runs as weighted phrases (0.7.0), so a session is found when any run of the query appears verbatim. Word-level search inside a run is impossible without an index-side tokenizer change — `memo_search` says so via `cjkWarning` (details in [`bench/`](bench/README.md)).
 - Notes need `$DSH_HOME` resolvable at tool-execution time. No other services, no API keys, no network calls.
 
 ## Roadmap
@@ -160,7 +160,8 @@ If you find a number here that doesn't reproduce, that is the highest-value bug 
 - [x] Tag search and note deduplication · 0.5.0 bug fixes (content-word-first tokenization, empty-token note leak, newline-safe append)
 - [x] Deterministic time-aware retrieval tested and rejected with published evidence
 - [x] LongMemEval-M (500-session pools) scale / anti-overfitting check — hit@1 52.6%, type ranking identical to S
-- [ ] Chinese-session evaluation corpus (blocked: none exists publicly; needs upstream CJK-aware tokenization)
+- [x] Chinese run-level recall (0.7.0) + built-in functional regression set (`bench/zh.cjs`, self-built, NOT a benchmark)
+- [ ] Chinese-session evaluation corpus (blocked: none exists publicly; benchmark-level Chinese numbers need it) · word-level recall inside runs (blocked: upstream tokenizer change)
 - [ ] End-to-end QA (retrieval + answer) — needs model-quota approval
 - [ ] Dense retrieval for the lexical ceiling — deliberately out of scope while "nothing else to run" holds
 
