@@ -8,10 +8,11 @@
 //      session (event_rank = 1 by match_count DESC, document_length ASC,
 //      time DESC, seq DESC) and ranks sessions by that representative's
 //      stats, returning the top `limit` (default 10).
-//   2. Tokenized step — each question token (<= 8, len >= 2) as its own
-//      quoted phrase, per term taking the top max(limit, 8) sessions in the
-//      same backend order; terms merged by matched-term count with time-desc
-//      tiebreak (the representative event's time), sliced to `limit`.
+//   2. Tokenized step — each question token (<= 8, len >= 2) plus each
+//      consecutive token pair as its own quoted phrase; per phrase the top
+//      max(limit, 8) sessions in backend order; merged by summed phrase
+//      weights (token length / pair string length — a local rarity proxy)
+//      with time-desc tiebreak, sliced to `limit`.
 //   3. Phrase hits listed first, then tokenized hits, deduplicated, sliced to
 //      `limit` — exactly the order and truncation the product ships.
 //
@@ -177,26 +178,33 @@ function main() {
       for (const c of cands.slice(0, REQUEST_LIMIT)) phraseRanked.push(c.id);
     }
 
-    // ---- Tokenized step: per-term top max(limit, 8), merged by count. ----
+    // ---- Tokenized step: per-phrase top max(limit, 8), merged by summed
+    // ---- phrase weights (token length / pair length), time-desc tiebreak.
     const tokens = tokenize(question).slice(0, TERM_MAX);
     const counts = new Map();
-    const repTimes = new Map(); // representative-event time of the first term that found the session
+    const repTimes = new Map(); // representative-event time of the first phrase that found the session
     if (tokens.length > 1) {
       const termLimit = Math.max(REQUEST_LIMIT, 8);
-      for (const term of tokens) {
+      const phrases = [];
+      for (const t of tokens) phrases.push([t, t.length]);
+      for (let i = 0; i + 1 < tokens.length; i++) {
+        const pair = tokens[i] + " " + tokens[i + 1];
+        phrases.push([pair, pair.length]);
+      }
+      for (const [phrase, weight] of phrases) {
         let rows = [];
-        try { rows = match.all(quotePhrase(term)); } catch (err) { /* term query failed */ }
+        try { rows = match.all(quotePhrase(phrase)); } catch (err) { /* phrase query failed */ }
         const cands = [];
         for (const row of rows) {
           const s = byId.get(String(row.id));
           if (!s) continue;
-          const rep = representative(s, [term]);
+          const rep = representative(s, phrase.split(" "));
           if (rep) cands.push({ id: s.id, occ: rep.occ, len: rep.len, time: rep.time, seq: rep.seq });
         }
         cands.sort(backendRank);
         for (const c of cands.slice(0, termLimit)) {
-          if (counts.has(c.id)) counts.set(c.id, counts.get(c.id) + 1);
-          else { counts.set(c.id, 1); repTimes.set(c.id, c.time); }
+          if (counts.has(c.id)) counts.set(c.id, counts.get(c.id) + weight);
+          else { counts.set(c.id, weight); repTimes.set(c.id, c.time); }
         }
       }
     }
@@ -235,7 +243,7 @@ function main() {
   }
 
   const pct = (n) => (total === 0 ? 0 : ((n / total) * 100).toFixed(1) + "%");
-  console.log("=== LongMemEval-S retrieval (product pipeline: phrase + per-term count merge) ===");
+  console.log("=== LongMemEval-S retrieval (product pipeline: phrase + weighted phrase-pair merge) ===");
   console.log(`questions: ${total}`);
   console.log(`hit@1 ${hit1}  ${pct(hit1)}   hit@5 ${hit5}  ${pct(hit5)}   hit@10 ${hit10}  ${pct(hit10)}   MRR ${(mrrSum / Math.max(1, total)).toFixed(4)}`);
   console.log("per question type (hit@1 / hit@5 / MRR):");

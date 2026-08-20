@@ -1,8 +1,41 @@
 # Changelog
 
 All notable changes to dsh-memo. Versions follow the npm release
-history; benchmark numbers are measured on [LongMemEval-S](bench/README.md)
-with the harness in this repo.
+history; benchmark numbers are measured on [LongMemEval-S and
+LoCoMo10](bench/README.md) with the harnesses in this repo.
+
+## 0.4.0 — 2026-08-20
+
+- **Recall algorithm** — `memo_search` now searches each question token plus
+  every consecutive token pair as its own quoted phrase and merges by summed
+  weights (token length, pair string length — a local rarity proxy), instead
+  of plain matched-term count. Selected on LongMemEval-S from five measured
+  variants and validated on LoCoMo10; costs up to 15 backend queries per
+  search (≈2× of 0.3.x). Experiment log in `bench/README.md`.
+  - LongMemEval-S: hit@1 36.4% → **54.6%**, hit@5 68.4% → **75.0%**,
+    MRR 0.499 → **0.636**.
+  - LoCoMo10 (new secondary benchmark, 1986 questions):
+    hit@1 43.7% · hit@5 73.7% · hit@10 87.3% · MRR 0.568.
+  - Weak types: assistant-quoted hit@1 1.8% → 17.9%; preference 16.7% →
+    26.7%.
+- **New** `memo_search` `tags` filter — notes must carry at least one of the
+  comma-separated tags.
+- **New** `memo_remember` exact-duplicate skip — re-writing identical text
+  returns the existing note instead of appending a copy.
+- `bench/` now ships the LoCoMo10 harness and the variant-selection
+  experiment harnesses (`locomo.cjs`, `exp.cjs`, `exp2.cjs`).
+
+## 0.3.3 — 2026-08-20
+
+- Docs: the Quick example in the English README is an English dialog.
+
+## 0.3.2 — 2026-08-20
+
+- README restructured against top-OSS practice (positioning, AI context
+  block, why-memo, requirements, support/contributing/security); Chinese
+  README moved to `docs/` so the npm page shows English; added
+  CHANGELOG / CONTRIBUTING / SECURITY; dev-form `memo.host.js` dropped from
+  the npm tarball.
 
 ## 0.3.1 — 2026-08-20
 

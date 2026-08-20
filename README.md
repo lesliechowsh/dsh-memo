@@ -53,7 +53,7 @@ DeepSeek Harness already records every session, message, and tool call. Memo tur
 - **Zero infrastructure** — no vector database, no embedding API, no background indexer. One plugin row, that's it.
 - **The official corpus is the source of truth** — Memo re-indexes nothing; it queries DSH's own `sessionQuery` (FTS5) service. What DSH recorded is what you can recall.
 - **Local-first** — every byte stays on your machine: sessions stay in DSH's store, notes are one human-readable JSONL file.
-- **Honest numbers** — retrieval quality is measured on LongMemEval-S with a harness that reproduces the shipped algorithm, and published warts and all (see [Benchmark](#benchmark)). No cherry-picked baselines.
+- **Honest numbers** — retrieval quality is measured on LongMemEval-S and LoCoMo10 with harnesses that reproduce the shipped algorithm, and published warts and all (see [Benchmark](#benchmark)). No cherry-picked baselines.
 
 External memory frameworks (Mem0, Letta, etc.) embed and re-store your data in infrastructure they manage; Memo keeps DSH's own store as the single source of truth and adds nothing to operate. If you need cross-app memory outside DSH, those tools are the better fit.
 
@@ -94,8 +94,8 @@ Uninstall: `dsh plugin --profile web remove dsh-memo`.
 
 | Tool | What it does |
 |---|---|
-| `memo_search(query, limit?, sessionId?, since?)` | Search every past session plus your memo notes — snippets, titles, time filtering |
-| `memo_remember(text, tags?)` | Write one durable note: facts, decisions, preferences that survive across sessions |
+| `memo_search(query, limit?, sessionId?, since?, tags?)` | Search every past session plus your memo notes — snippets, titles, time filtering, tag filtering |
+| `memo_remember(text, tags?)` | Write one durable note: facts, decisions, preferences that survive across sessions; skips exact-duplicate text |
 | `memo_stats()` | Corpus overview: session count, recent titles, note count |
 
 ## How it works
@@ -104,10 +104,11 @@ Uninstall: `dsh plugin --profile web remove dsh-memo`.
                        ┌─────────────────────────────────────────┐
   memo_search(query) ─▶│  1. phrase step   whole query, quoted    │
                        │     FTS5 phrase → top 10 sessions        │
-                       │  2. term step     ≤8 tokens, top 10 each │
-                       │     merged by matched-term count,        │
+                       │  2. weighted step  ≤8 tokens + pairs,    │
+                       │     top 10 each, merged by summed        │
+                       │     weights (token/pair length),         │
                        │     time-desc tiebreak                   │
-                       │  3. phrase first, then terms, dedup, 10  │
+                       │  3. phrase first, then weighted, dedup   │
                        └───────────────┬──────────────────────────┘
                                        │ official sessionQuery (FTS5)
                                        ▼
@@ -118,7 +119,7 @@ Uninstall: `dsh plugin --profile web remove dsh-memo`.
 ```
 
 - **Reads the official corpus** — DSH's `sessionQuery` service is the single source of truth; Memo re-indexes nothing, duplicates nothing.
-- **Two-layer recall** — phrase-first exact matches, then per-term matches merged by matched-term count. Question-style queries work, not just keywords.
+- **Two-layer recall** — phrase-first exact matches, then each question token and consecutive token pair matched as its own phrase, merged by summed weights (token length, pair length — a local rarity proxy). Question-style queries work, not just keywords.
 - **Notes are plain JSONL** at `$DSH_HOME/memo/notes.jsonl` — human-readable, editable, portable.
 
 ## Usage
@@ -142,6 +143,13 @@ memo_search(query: "theme tokens", sessionId: "session-49924467-…")
 memo_remember(text: "Product naming: dsh- prefix + snake_case memo_* tools. No real-person names (Dieter Rams lesson).", tags: "naming,convention")
 ```
 
+Re-writing the same text returns the existing note instead of duplicating it.
+Find notes by tag:
+
+```
+memo_search(query: "naming", tags: "convention")
+```
+
 ### Check the corpus
 
 ```
@@ -162,27 +170,34 @@ Writing (`memo_remember`) and reading (`memo_search`) follow the survey's memory
 
 ## Benchmark
 
-Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813) (500 questions, 54-session haystacks per question), session-level retrieval under the exact pipeline `memo_search` ships — phrase-first plus per-term matched-count merge, with the official backend's page-size truncation and representative-event ranking — reproduced in the harness over the same FTS5 engine class the backend uses. Full protocol and environment: [`bench/`](bench/README.md).
+Measured on two datasets under the exact pipeline `memo_search` ships — phrase-first plus weighted token/pair merge, with the official backend's page-size truncation and representative-event ranking — reproduced in the harnesses over the same FTS5 engine class the backend uses. Full protocol, environment, and the variant-selection experiment log: [`bench/`](bench/README.md).
 
-**Overall: hit@1 36.4% · hit@5 68.4% · hit@10 80.0% · MRR 0.499**
+**LongMemEval-S** ([arXiv:2410.10813](https://arxiv.org/abs/2410.10813), 500 questions, 54-session haystacks per question):
+
+**hit@1 54.6% · hit@5 75.0% · hit@10 82.8% · MRR 0.636**
 
 | Question type | n | hit@1 | hit@5 | MRR |
 |---|---|---|---|---|
-| multi-session | 133 | 38.3% | 76.7% | 0.551 |
-| temporal-reasoning | 133 | 33.8% | 69.9% | 0.486 |
-| knowledge-update | 78 | 55.1% | 89.7% | 0.701 |
-| single-session-user | 70 | 52.9% | 77.1% | 0.635 |
-| single-session-assistant | 56 | 1.8% | 17.9% | 0.073 |
-| single-session-preference | 30 | 16.7% | 43.3% | 0.279 |
+| multi-session | 133 | 59.4% | 80.5% | 0.691 |
+| temporal-reasoning | 133 | 46.6% | 74.4% | 0.587 |
+| knowledge-update | 78 | 83.3% | 97.4% | 0.893 |
+| single-session-user | 70 | 70.0% | 88.6% | 0.784 |
+| single-session-assistant | 56 | 17.9% | 26.8% | 0.220 |
+| single-session-preference | 30 | 26.7% | 53.3% | 0.378 |
 
-**Scope:** this measures session localization — whether the gold session appears in the top-k — not end-to-end answer accuracy, which is a separate roadmap item. The weak types (assistant-quoted answers, preferences) are the known frontier.
+**LoCoMo10** ([snap-research/LoCoMo](https://github.com/snap-research/LoCoMo), 1986 questions over 10 very long conversations, cross-dataset check):
+
+**hit@1 43.7% · hit@5 73.7% · hit@10 87.3% · MRR 0.568**
+
+**Scope:** these measure session localization — whether the gold session appears in the top-k — not end-to-end answer accuracy, which is a separate roadmap item. The retrieval algorithm shipped in 0.4.0 was selected on LongMemEval-S and validated on LoCoMo10; assistant-quoted and preference-type questions remain the weakest types.
 
 ## Roadmap
 
-- [ ] LoCoMo secondary benchmark
-- [ ] End-to-end QA (retrieval + answer) on a 100-question subset
-- [ ] Better recall for preference-type questions
-- [ ] Tag search and note deduplication
+- [x] LoCoMo10 secondary benchmark
+- [x] Tag search and note deduplication
+- [x] Recall for weak types — weighted token/pair merge (0.4.0): assistant-quoted hit@1 1.8% → 17.9%, preference hit@1 16.7% → 26.7%
+- [ ] End-to-end QA (retrieval + answer) on a 100-question subset — needs model-quota approval
+- [ ] Further recall work on assistant-quoted and preference questions (they remain the frontier)
 
 ## Support & contributing
 

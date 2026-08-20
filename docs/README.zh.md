@@ -94,8 +94,8 @@ dsh plugin --profile web add dsh-memo@latest
 
 | 工具 | 作用 |
 |---|---|
-| `memo_search(query, limit?, sessionId?, since?)` | 搜索所有历史会话 + 备忘笔记——片段、标题、时间过滤 |
-| `memo_remember(text, tags?)` | 写一条持久笔记：跨会话存续的事实、决定、偏好 |
+| `memo_search(query, limit?, sessionId?, since?, tags?)` | 搜索所有历史会话 + 备忘笔记——片段、标题、时间过滤、标签过滤 |
+| `memo_remember(text, tags?)` | 写一条持久笔记：跨会话存续的事实、决定、偏好；完全重复的文本不再重复写入 |
 | `memo_stats()` | 语料总览：会话数、最近标题、笔记条数 |
 
 ## 工作原理
@@ -104,9 +104,10 @@ dsh plugin --profile web add dsh-memo@latest
                        ┌─────────────────────────────────────────┐
   memo_search(query) ─▶│  1. 短语步   整句查询，FTS5 引号短语      │
                        │     匹配 → top 10 会话                  │
-                       │  2. 逐词步   ≤8 词，每词 top 10          │
-                       │      按命中词数合并，时间降序 tiebreak    │
-                       │  3. 短语优先，再逐词，去重，取前 10       │
+                       │  2. 加权步   ≤8 词 + 相邻词对，各自       │
+                       │      top 10，按权重求和合并              │
+                       │     （词长 / 词对长度），时间降序 tiebreak │
+                       │  3. 短语优先，再加权结果，去重            │
                        └───────────────┬──────────────────────────┘
                                        │ 官方 sessionQuery (FTS5)
                                        ▼
@@ -117,7 +118,7 @@ dsh plugin --profile web add dsh-memo@latest
 ```
 
 - **读官方语料**——DSH 的 `sessionQuery` 服务是唯一真相源；Memo 不重建索引、不重复存储。
-- **双层召回**——短语精确命中优先，逐词匹配按命中数合并排序。提问式查询和关键词都能用。
+- **双层召回**——短语精确命中优先，然后每个查询词与相邻词对各自作为短语匹配，按权重（词长、词对长度——本地稀有度代理）求和合并排序。提问式查询和关键词都能用。
 - **笔记是纯 JSONL**——存在 `$DSH_HOME/memo/notes.jsonl`，人类可读、可编辑、可迁移。
 
 ## 用法
@@ -141,6 +142,12 @@ memo_search(query: "theme tokens", sessionId: "session-49924467-…")
 memo_remember(text: "命名规范：dsh- 前缀 + snake_case 的 memo_* 工具名；不用真人姓名（Dieter Rams 教训）。", tags: "naming,convention")
 ```
 
+重写相同文本会返回已有笔记而不是重复写入。按标签找笔记：
+
+```
+memo_search(query: "naming", tags: "convention")
+```
+
 ### 查看语料
 
 ```
@@ -161,27 +168,34 @@ Memo 的定位落在 [《Memory for Large Language Models》](https://arxiv.org/
 
 ## Benchmark
 
-在 [LongMemEval-S](https://arxiv.org/abs/2410.10813)（500 个问题，每题 54 个干扰会话）上实测，会话级检索，评测脚本忠实复刻 `memo_search` 内置管线（短语优先 + 逐词命中数合并，含官方后端的分页截断与代表事件排序），跑在与后端同类的 FTS5 引擎上。完整协议与环境：[`bench/`](../bench/README.md)。
+在两个数据集上实测，评测脚本忠实复刻 `memo_search` 内置管线（短语优先 + 加权词/词对合并，含官方后端的分页截断与代表事件排序），跑在与后端同类的 FTS5 引擎上。完整协议、环境与变体选择实验记录：[`bench/`](../bench/README.md)。
 
-**总成绩：hit@1 36.4% · hit@5 68.4% · hit@10 80.0% · MRR 0.499**
+**LongMemEval-S**（[arXiv:2410.10813](https://arxiv.org/abs/2410.10813)，500 个问题，每题 54 个干扰会话）：
+
+**hit@1 54.6% · hit@5 75.0% · hit@10 82.8% · MRR 0.636**
 
 | 题型 | n | hit@1 | hit@5 | MRR |
 |---|---|---|---|---|
-| multi-session | 133 | 38.3% | 76.7% | 0.551 |
-| temporal-reasoning | 133 | 33.8% | 69.9% | 0.486 |
-| knowledge-update | 78 | 55.1% | 89.7% | 0.701 |
-| single-session-user | 70 | 52.9% | 77.1% | 0.635 |
-| single-session-assistant | 56 | 1.8% | 17.9% | 0.073 |
-| single-session-preference | 30 | 16.7% | 43.3% | 0.279 |
+| multi-session | 133 | 59.4% | 80.5% | 0.691 |
+| temporal-reasoning | 133 | 46.6% | 74.4% | 0.587 |
+| knowledge-update | 78 | 83.3% | 97.4% | 0.893 |
+| single-session-user | 70 | 70.0% | 88.6% | 0.784 |
+| single-session-assistant | 56 | 17.9% | 26.8% | 0.220 |
+| single-session-preference | 30 | 26.7% | 53.3% | 0.378 |
 
-**口径说明：** 本评测测量"会话定位"——金标会话是否进入 top-k——而非端到端答题准确率（后者是路线图单列项）。弱项题型（助手复述类、偏好类）是已知前沿。
+**LoCoMo10**（[snap-research/LoCoMo](https://github.com/snap-research/LoCoMo)，10 段超长对话共 1986 个问题，跨数据集验证）：
+
+**hit@1 43.7% · hit@5 73.7% · hit@10 87.3% · MRR 0.568**
+
+**口径说明：** 评测测量"会话定位"——金标会话是否进入 top-k——而非端到端答题准确率（后者是路线图单列项，需要模型配额）。0.4.0 的检索算法在 LongMemEval-S 上选定、在 LoCoMo10 上验证；助手复述类与偏好类仍是相对弱项。
 
 ## 路线图
 
-- [ ] LoCoMo 辅测
-- [ ] 端到端 QA（检索 + 答题，100 问子集）
-- [ ] preference 类问题召回改善
-- [ ] 标签搜索与笔记去重
+- [x] LoCoMo10 辅测
+- [x] 标签搜索与笔记去重
+- [x] 弱项召回——加权词/词对合并（0.4.0）：助手复述类 hit@1 1.8% → 17.9%，偏好类 16.7% → 26.7%
+- [ ] 端到端 QA（检索 + 答题，100 问子集）——需要模型配额批准
+- [ ] 助手复述类与偏好类问题的进一步召回工作（仍是前沿）
 
 ## 支持与贡献
 
