@@ -4,6 +4,22 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.10.0 — 2026-08-21
+
+- **Install now enables session search.** DSH ships full-text session
+  search opt-in (base composition: `openAt: never`), so on every default
+  deployment `memo_search`'s session side failed with
+  `SESSION_QUERY_SEARCH_DISABLED` — the flagship feature was broken out of
+  the box and we only found out when a real user tested a real deployment
+  (our bench harnesses exercise the algorithm, not the platform). The
+  package now carries `cordis.patch.yml`, applied automatically when
+  installed as a profile bundle, overriding the platform row to
+  `openAt: first-search` (in-memory index; durable `path` override and
+  opt-out documented in the README). Added to the npm `files` whitelist.
+- **New release rule** (AGENTS.md): every release must be smoke-tested in a
+  real default deployment — fresh `dsh plugin add` + real `memo_search`
+  against real sessions — not just bench.
+
 ## 0.9.0 — 2026-08-21
 
 - **Multi-snippet evidence** — the top-3 hit sessions now each carry up to 3

@@ -39,6 +39,20 @@ dsh plugin --profile web add dsh-memo@latest
 
 重启 `dsh web`——agent 的工具列表里出现三个 `memo_*` 工具。整个安装就这些。（卸载：`dsh plugin --profile web remove dsh-memo`；无 CLI 部署的手动配置步骤见 [CONTRIBUTING.md](../CONTRIBUTING.md)。）
 
+**安装顺手做的一件事：** DSH 出厂时全文会话搜索是 opt-in 的——平台默认 `openAt: never`，`searchSessions`/`searchEvents` 处于禁用状态，直到有东西把它打开。Memo 的包自带补丁，安装即启用平台内置索引（`openAt: first-search`）。两个诚实的后果，都是 DSH 的设计：
+
+- **索引在内存里**，所以每次重启后的第一次搜索会重建索引。大语料下这第一次搜索会慢；同进程内的后续搜索都很快。
+- 想要持久索引？在你的 profile 的 `cordis.patch.yml` 里加一个 `path`：
+
+```yaml
+- id: session-query-sqlite
+  config:
+    path: /path/to/your/dsh-home/storages/session-search.sqlite
+    openAt: first-search
+```
+
+如果你的部署刻意想关掉搜索，在后置补丁层里重新设 `openAt: never` 即可；此时 Memo 只提供笔记功能，并如实报告禁用状态而不是编造命中。以上适用于 DSH ≥ 0.1.0-rc.7（引入 opt-in 默认值的版本）。
+
 ## 你能得到什么
 
 - **每个历史会话都可搜索。** 用大白话问（"我们之前决定过……吗？"），一次工具调用拿回命中的会话、片段和证据。
