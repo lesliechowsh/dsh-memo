@@ -1,11 +1,25 @@
 # Memo
 
-[中文文档](./README.zh.md)
+[中文文档](./docs/README.zh.md)
 
 [![npm](https://img.shields.io/npm/v/dsh-memo)](https://www.npmjs.com/package/dsh-memo)
 [![license](https://img.shields.io/npm/l/dsh-memo)](LICENSE)
+[![status](https://img.shields.io/badge/status-beta-8B7E5A)](CHANGELOG.md)
 
 **Your agent's memory of everything it ever did — across every session, with zero infrastructure.**
+
+```yaml
+project:    dsh-memo
+domain:     agent memory / session retrieval
+audience:   DSH (DeepSeek Harness) users who want their agent to remember
+interfaces: three model tools — memo_search / memo_remember / memo_stats
+runtime:    DSH host plugin (Node), no extra services, no vector DB
+storage:    the official DSH session corpus + one plain JSONL notes file
+status:     beta — API stable since 0.3, benchmarked, see CHANGELOG
+support:    GitHub Issues
+```
+
+> **For** DSH users who need their agent to answer "what did we decide three days ago?" — **Memo is** a zero-infrastructure memory plugin that **turns the session corpus DSH already records into searchable memory**. Unlike external memory frameworks, it re-indexes nothing, stores nothing outside your machine, and runs on the official `sessionQuery` backend.
 
 DeepSeek Harness already records every session, message, and tool call. Memo turns that corpus into searchable memory your agent can actually use: ask about anything from any past session, and get the evidence back in one tool call.
 
@@ -32,21 +46,23 @@ DeepSeek Harness already records every session, message, and tool call. Memo tur
 }
 ```
 
-> Agent: *"有——我们在 Weniger 主题项目里调研过：'DESIGN DIETER RAMS' 是注册商标，所以产品改名为 Weniger，还查了 Braun 的诉讼记录……"*
+> Agent: *"有——我们在 Weniger 主题项目里调研过：'DESIGN DIETER RAMS' 是注册商标，所以产品改名为 Weniger……"*
 
-## Tools
+## Why Memo
 
-| Tool | What it does |
-|---|---|
-| `memo_search(query, limit?, sessionId?, since?)` | Search every past session plus your memo notes — snippets, titles, time filtering |
-| `memo_remember(text, tags?)` | Write one durable note: facts, decisions, preferences that survive across sessions |
-| `memo_stats()` | Corpus overview: session count, recent titles, note count |
+- **Zero infrastructure** — no vector database, no embedding API, no background indexer. One plugin row, that's it.
+- **The official corpus is the source of truth** — Memo re-indexes nothing; it queries DSH's own `sessionQuery` (FTS5) service. What DSH recorded is what you can recall.
+- **Local-first** — every byte stays on your machine: sessions stay in DSH's store, notes are one human-readable JSONL file.
+- **Honest numbers** — retrieval quality is measured on LongMemEval-S with a harness that reproduces the shipped algorithm, and published warts and all (see [Benchmark](#benchmark)). No cherry-picked baselines.
 
-## How it works
+External memory frameworks (Mem0, Letta, etc.) embed and re-store your data in infrastructure they manage; Memo keeps DSH's own store as the single source of truth and adds nothing to operate. If you need cross-app memory outside DSH, those tools are the better fit.
 
-- **Reads the official corpus** — DSH's `sessionQuery` service is the single source of truth; Memo re-indexes nothing, duplicates nothing.
-- **Two-layer recall** — phrase-first exact matches, then per-term matches merged by matched-term count. Question-style queries work, not just keywords.
-- **Notes are plain JSONL** at `$DSH_HOME/memo/notes.jsonl` — human-readable, editable, portable.
+## Requirements
+
+- **DeepSeek Harness** with the `sessionQuery` service in the composition (shipped in the standard `web` profile).
+- The deployment's session-query index must be open — if it is configured with `openAt: "never"`, session search is disabled and `memo_search` reports it honestly instead of guessing.
+- Notes need `$DSH_HOME` resolvable at tool-execution time (standard on every DSH deployment).
+- No other services, no API keys, no network calls.
 
 ## Install
 
@@ -71,6 +87,39 @@ Restart `dsh web` — the three `memo_*` tools appear in your agent's tool list.
 3. Restart `dsh web`.
 
 </details>
+
+Uninstall: `dsh plugin --profile web remove dsh-memo`.
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `memo_search(query, limit?, sessionId?, since?)` | Search every past session plus your memo notes — snippets, titles, time filtering |
+| `memo_remember(text, tags?)` | Write one durable note: facts, decisions, preferences that survive across sessions |
+| `memo_stats()` | Corpus overview: session count, recent titles, note count |
+
+## How it works
+
+```
+                       ┌─────────────────────────────────────────┐
+  memo_search(query) ─▶│  1. phrase step   whole query, quoted    │
+                       │     FTS5 phrase → top 10 sessions        │
+                       │  2. term step     ≤8 tokens, top 10 each │
+                       │     merged by matched-term count,        │
+                       │     time-desc tiebreak                   │
+                       │  3. phrase first, then terms, dedup, 10  │
+                       └───────────────┬──────────────────────────┘
+                                       │ official sessionQuery (FTS5)
+                                       ▼
+        DSH session corpus (live + persisted events)     notes.jsonl
+                                       │                            │
+                                       ▼                            ▼
+                    sessions + titles + snippets          matched notes
+```
+
+- **Reads the official corpus** — DSH's `sessionQuery` service is the single source of truth; Memo re-indexes nothing, duplicates nothing.
+- **Two-layer recall** — phrase-first exact matches, then per-term matches merged by matched-term count. Question-style queries work, not just keywords.
+- **Notes are plain JSONL** at `$DSH_HOME/memo/notes.jsonl` — human-readable, editable, portable.
 
 ## Usage
 
@@ -134,6 +183,12 @@ Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813) (500 questions, 54
 - [ ] End-to-end QA (retrieval + answer) on a 100-question subset
 - [ ] Better recall for preference-type questions
 - [ ] Tag search and note deduplication
+
+## Support & contributing
+
+- Questions and bug reports: [GitHub Issues](https://github.com/lesliechowsh/dsh-memo/issues)
+- Reproduce the benchmark or add a new one: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Security reports: [SECURITY.md](SECURITY.md) — Memo never sends data off your machine; its only network-free dependency is the local DSH session store.
 
 ## License
 
