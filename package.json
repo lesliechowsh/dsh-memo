@@ -6,7 +6,8 @@
   "files": [
     "index.js",
     "memo.host.js",
-    "bench-run.cjs"
+    "bench/run.cjs",
+    "bench/README.md"
   ],
   "keywords": [
     "dsh",
