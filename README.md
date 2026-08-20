@@ -67,7 +67,7 @@ Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813) (500 questions, 54
 | single-session-assistant | 56 | 100.0% | 100.0% | 1.000 |
 | single-session-preference | 30 | 53.3% | 96.7% | 0.670 |
 
-`memo_search` ships this retrieval: phrase-first exact matches, then per-term matches merged by matched-term count.
+`memo_search` ships this retrieval: phrase-first exact matches, then per-term matches merged by matched-term count. Environment and full protocol: [`bench/`](bench/README.md) (Node 26 + SQLite 3.53 FTS5, deterministic, no model calls).
 
 ## License
 

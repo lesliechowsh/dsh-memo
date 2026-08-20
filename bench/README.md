@@ -25,6 +25,14 @@ LIMIT=10 node bench/run.cjs   # quick smoke run
 Requires Node 22+ (uses the built-in `node:sqlite` FTS5 engine — the same
 engine class as DSH's official session-query backend).
 
+## Environment (the run that produced the published numbers)
+
+- Node.js v26.4.0 (built-in `node:sqlite`)
+- SQLite 3.53.0 (FTS5, unicode61 tokenizer)
+- Linux 6.1.145 (Android/Termux), aarch64, 4 cores
+- No network or model calls: pure deterministic retrieval — rerunning the
+  harness with the same dataset bytes reproduces the exact numbers.
+
 ## Protocol
 
 - One FTS5 document per haystack **session** (the unit `memo_search` returns).

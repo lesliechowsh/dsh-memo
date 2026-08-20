@@ -67,7 +67,7 @@ Memo 的定位落在 [《Memory for Large Language Models》](https://arxiv.org/
 | single-session-assistant | 56 | 100.0% | 100.0% | 1.000 |
 | single-session-preference | 30 | 53.3% | 96.7% | 0.670 |
 
-`memo_search` 内置该检索：短语精确命中优先，逐词匹配按命中数合并排序。
+`memo_search` 内置该检索：短语精确命中优先，逐词匹配按命中数合并排序。运行环境与完整协议见 [`bench/`](bench/README.md)（Node 26 + SQLite 3.53 FTS5，确定性评测，无模型调用）。
 
 ## 许可证
 
