@@ -19,7 +19,25 @@ curl -L -o longmemeval_s.json \
 # 278,025,796 bytes
 ```
 
-### LoCoMo10
+### LongMemEval-M (scale / anti-overfitting)
+
+The M variant: 500 new questions with ~500-session haystacks each (~2.5 GB;
+file name `longmemeval_m`, 2,745,274,681 bytes):
+
+```sh
+curl -L -o ~/bench/longmemeval_m.json \
+  https://hf-mirror.com/datasets/xiaowu0162/longmemeval/resolve/main/longmemeval_m
+```
+
+```sh
+node bench/run-m.cjs               # full 500 questions (~35 min on 4 cores)
+M_START=0 M_LIMIT=100 node bench/run-m.cjs   # segmented runs; add segment
+                                             # hit/mrr counts to merge
+```
+
+The M harness streams the file (never parses it whole — the first scanner
+design double-counted braces and crashed at the V8 string limit; the fix is
+documented in the file header).
 
 The LoCoMo benchmark's in-tree 10-conversation release (1986 QA samples with
 evidence turn ids), from the official repo:
@@ -137,10 +155,15 @@ Other protocol facts:
   Chinese; a Chinese-session evaluation would need its own weighting (and is
   blocked on upstream CJK tokenization anyway — see below).
 
-## Results (shipped 0.5.0 pipeline)
+## Results (shipped 0.6.0 pipeline)
 
 - LongMemEval-S: hit@1 74.8% · hit@5 89.8% · hit@10 95.2% · MRR 0.8116.
 - LoCoMo10: hit@1 53.2% · hit@5 80.4% · hit@10 91.1% · MRR 0.6508.
+- LongMemEval-M (anti-overfitting): hit@1 52.6% · hit@5 76.6% · hit@10 82.8%
+  · MRR 0.6260 — random hit@1 ≈ 0.2%, so ≈ 260× random; the per-type rank
+  order matches S exactly (knowledge-update strongest, preference weakest),
+  the expected signature of an algorithm that was selected on S and held up
+  on a fresh 500-question, 10×-larger-pool set.
 - LongMemEval-CN cross-lingual (see below): hit@1 33.6% — entirely from
   untranslated Latin tokens; pure-Chinese queries over English sessions
   cannot match, and no tokenizer change fixes that (the gap is translation).

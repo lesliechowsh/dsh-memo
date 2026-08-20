@@ -108,14 +108,32 @@ Measured under the exact pipeline `memo_search` ships — reproduced in harnesse
 
 **LoCoMo10** (1986 questions, cross-dataset check): **hit@1 53.2% · hit@5 80.4% · MRR 0.651** — read hit@1 there, not hit@10 (see below).
 
+**LongMemEval-M** (500 **new** questions, ~500-session pools — the scale / anti-overfitting check):
+
+**hit@1 52.6% · hit@5 76.6% · hit@10 82.8% · MRR 0.626** (random hit@1 on this pool ≈ 0.2% → ≈ 260× random)
+
+| Question type | n | hit@1 | hit@5 | MRR |
+|---|---|---|---|---|
+| knowledge-update | 78 | 78.2% | 92.3% | 0.840 |
+| single-session-user | 70 | 58.6% | 82.9% | 0.678 |
+| temporal-reasoning | 133 | 50.4% | 72.9% | 0.603 |
+| multi-session | 133 | 48.1% | 79.7% | 0.614 |
+| single-session-assistant | 56 | 37.5% | 62.5% | 0.481 |
+| single-session-preference | 30 | 30.0% | 50.0% | 0.374 |
+
+The S → M drop (hit@1 74.8% → 52.6%) tracks the ~10× larger pool, and the
+per-type rank order is **identical** across the two independent question sets —
+the expected signature of a real algorithm, not one tuned to S. The pipeline
+was selected on S only; M was run once, after the fact.
+
 **LongMemEval-CN cross-lingual** (Chinese questions over the original English haystacks): **hit@1 33.6%**, entirely from Latin tokens left untranslated in the questions — the gap is translation, not tokenization. A Chinese-session evaluation corpus does not exist publicly yet.
 
 **Scope — read these numbers for what they are:**
 
 - Session-localization hit@k (~54 / ~27-session pools), not end-to-end answer accuracy — not comparable to Mem0 / Zep / LangMem (LLM reader + judge pipelines).
-- Signal-to-noise: random hit@1 is ≈1.9% on S (54 sessions), ≈3.7% on LoCoMo (~27); Memo's 74.8% / 53.2% are ≈40× / ≈14× that. LoCoMo's random hit@10 is already ≈37%.
-- Not comparable to the LongMemEval paper's retrieval table (BM25 R@5 63–68%, Contriever/Stella R@5 72–76% on the 500-session M scale, Recall@k protocol). No claim of parity with dense retrievers; Memo is a sparse lexical retriever near its class's ceiling.
-- Known ceilings: assistant-quoted (51.8%) and preference (33.3%) questions are the lexical floor — their evidence often shares no words with the question.
+- Signal-to-noise: random hit@1 is ≈1.9% on S (54 sessions), ≈3.7% on LoCoMo (~27), ≈0.2% on M (~500); Memo's 74.8% / 53.2% / 52.6% are ≈40× / ≈14× / ≈260× that. LoCoMo's random hit@10 is already ≈37%.
+- On the M scale we now publish our own numbers: hit@5 76.6%. The paper's retrieval table (BM25 R@5 63–68%, Contriever/Stella R@5 72–76%) uses Recall@k over rounds; ours is session hit@k — close but not the same protocol, so **no parity claim**. Memo is a sparse lexical retriever near its class's ceiling.
+- Known ceilings: assistant-quoted and preference questions are the lexical floor — their evidence often shares no words with the question (33.3% / 30.0% hit@1 on S / M).
 - The length-as-rarity weighting ("long word ≈ content word") is an English statistical regularity; it does not transfer to Chinese.
 
 ## A note from the maintainer, before the claims
@@ -141,7 +159,7 @@ If you find a number here that doesn't reproduce, that is the highest-value bug 
 - [x] LoCoMo10 secondary benchmark · LongMemEval-CN cross-lingual benchmark
 - [x] Tag search and note deduplication · 0.5.0 bug fixes (content-word-first tokenization, empty-token note leak, newline-safe append)
 - [x] Deterministic time-aware retrieval tested and rejected with published evidence
-- [ ] LongMemEval-M (500-session pools) as a scale / anti-overfitting check — in progress
+- [x] LongMemEval-M (500-session pools) scale / anti-overfitting check — hit@1 52.6%, type ranking identical to S
 - [ ] Chinese-session evaluation corpus (blocked: none exists publicly; needs upstream CJK-aware tokenization)
 - [ ] End-to-end QA (retrieval + answer) — needs model-quota approval
 - [ ] Dense retrieval for the lexical ceiling — deliberately out of scope while "nothing else to run" holds

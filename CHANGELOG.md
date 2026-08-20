@@ -4,6 +4,18 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.6.0 — 2026-08-20
+
+- **LongMemEval-M anti-overfitting check** — the shipped pipeline, unchanged,
+  run once on the M variant (500 NEW questions, ~500-session pools, ~10× the
+  S pool size): hit@1 52.6% · hit@5 76.6% · hit@10 82.8% · MRR 0.626
+  (≈ 260× the 0.2% random baseline). The per-type rank order is identical to
+  S — the expected signature of a real algorithm, not one tuned to S. New
+  streaming harness `bench/run-m.cjs` with segment support (M_START/M_LIMIT).
+- Docs: M results added to the benchmark sections (EN/ZH) with the honest
+  caveat that our M hit@5 76.6% and the paper's M-scale Recall@k numbers are
+  near but not the same protocol — still no parity claim.
+
 ## 0.5.0 — 2026-08-20
 
 Three bugs found by code review — two made features fail outright — fixed and
