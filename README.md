@@ -3,7 +3,6 @@
 [中文文档](./README.zh.md)
 
 [![npm](https://img.shields.io/npm/v/dsh-memo)](https://www.npmjs.com/package/dsh-memo)
-[![npm downloads](https://img.shields.io/npm/dm/dsh-memo)](https://www.npmjs.com/package/dsh-memo)
 [![license](https://img.shields.io/npm/l/dsh-memo)](LICENSE)
 
 **Your agent's memory of everything it ever did — across every session, with zero infrastructure.**

@@ -3,7 +3,6 @@
 [English](./README.md)
 
 [![npm](https://img.shields.io/npm/v/dsh-memo)](https://www.npmjs.com/package/dsh-memo)
-[![npm downloads](https://img.shields.io/npm/dm/dsh-memo)](https://www.npmjs.com/package/dsh-memo)
 [![license](https://img.shields.io/npm/l/dsh-memo)](LICENSE)
 
 **你 agent 的记忆：它做过的每一件事，跨所有会话，零基础设施。**
