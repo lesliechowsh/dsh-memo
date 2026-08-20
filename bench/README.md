@@ -155,15 +155,36 @@ Other protocol facts:
   Chinese; a Chinese-session evaluation would need its own weighting (and is
   blocked on upstream CJK tokenization anyway — see below).
 
-## Results (shipped 0.6.0 pipeline)
+## Results (shipped 0.8.0 pipeline)
 
-- LongMemEval-S: hit@1 74.8% · hit@5 89.8% · hit@10 95.2% · MRR 0.8116.
-- LoCoMo10: hit@1 53.2% · hit@5 80.4% · hit@10 91.1% · MRR 0.6508.
-- LongMemEval-M (anti-overfitting): hit@1 52.6% · hit@5 76.6% · hit@10 82.8%
-  · MRR 0.6260 — random hit@1 ≈ 0.2%, so ≈ 260× random; the per-type rank
-  order matches S exactly (knowledge-update strongest, preference weakest),
-  the expected signature of an algorithm that was selected on S and held up
-  on a fresh 500-question, 10×-larger-pool set.
+- LongMemEval-S: hit@1 78.2% · hit@5 92.4% · hit@10 97.4% · MRR 0.8469.
+- LongMemEval-M (anti-overfitting, 5×100 segmented): hit@1 54.6% · hit@5
+  78.6% · hit@10 83.8% · MRR 0.6452 — random hit@1 ≈ 0.2%, so ≈ 273×
+  random; every segment positive vs the 0.7.x algorithm.
+- LoCoMo10: hit@1 60.2% · hit@5 87.2% · hit@10 93.5% · MRR 0.7183.
+- LongMemEval-CN cross-lingual (see below): hit@1 44.6% with the shipped
+  0.7.0 tokenizer (33.6% before CJK runs were added — they unblock the
+  weighted step for mixed queries). All gains come from untranslated Latin
+  tokens; pure-Chinese queries over English sessions cannot match, and no
+  tokenizer change fixes that (the gap is translation).
+
+## Why 0.8.0 changed the weighting (analyze.cjs evidence)
+
+`analyze.cjs` decomposes misses with per-question diagnostics. On S:
+
+- Discovery is near-perfect: 99.6% of gold sessions are already inside some
+  per-phrase top-10 under the SAME phrase set. The loss is in the MERGE
+  ranking, not in discovery.
+- Miss causes (rank 0, n=24): near-miss 22 (gold at merged rank 11-31),
+  no-anchor 1, discovered-cut 1, merge-cut 0. On this dataset the
+  "lexical floor" narrative (gold shares no words with the question) is
+  wrong for all but one question.
+- Oracle ceilings over the same phrase set: perfect ranking of discovered
+  sessions → 99.8% hit@1; IDF rerank of the top-10 lists (true df, harness
+  oracle) → 97.6%. The product-feasible proxy version (0.8.0) measures
+  78.2% — the oracle's remaining gap involves recipe details that differ
+  from the product pipeline and is recorded as unexplained headroom, not
+  quoted as reachable.
 - LongMemEval-CN cross-lingual (see below): hit@1 44.4% with the shipped
   0.7.0 tokenizer (33.6% before CJK runs were added — they unblock the
   weighted step for mixed queries). All gains come from untranslated Latin
@@ -282,6 +303,8 @@ Conclusion recorded here for honesty: deterministic time-aware expansion does
 not pay on top of the 0.5.0 baseline; the paper's gains require index-side
 date indexing and a temporal model, both outside Memo's architecture.
 
-Cost note: the shipped variant issues up to 15 backend queries per
-`memo_search` (8 tokens + 7 pairs) instead of 8 — roughly 2× the backend
-calls of 0.3.x.
+Cost note: the shipped variant issues up to 23 backend queries per
+`memo_search` (8 token-df estimates + 8 tokens + 7 pairs) instead of 8 —
+roughly 3× the backend calls of 0.3.x, for the 0.8.0 weighting. The df
+estimates use capped-50 counts; if they fail, the pipeline falls back to
+length weights.

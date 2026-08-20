@@ -197,7 +197,20 @@ function main() {
         const pair = tokens[i] + " " + tokens[i + 1];
         phrases.push([pair, pair.length]);
       }
-      for (const [phrase, weight] of phrases) {
+      // 0.8.0 df-proxy IDF weights (mirrors the shipped product)
+      const dfCache = new Map();
+      const idfOf = (term) => {
+        if (!dfCache.has(term)) {
+          let rows = [];
+          try { rows = match.all(quotePhrase(term)); } catch (err) { /* none */ }
+          dfCache.set(term, Math.log((sessions.length + 1) / (1 + Math.min(rows.length, 50))));
+        }
+        return dfCache.get(term);
+      };
+      for (const [phrase, lenWeight] of phrases) {
+        const pts = phrase.split(" ");
+        const isPair = pts.length === 2;
+        const weight = isPair ? lenWeight * Math.max(idfOf(pts[0]), idfOf(pts[1])) : 4 * idfOf(pts[0]);
         let rows = [];
         try { rows = match.all(quotePhrase(phrase)); } catch (err) { /* phrase query failed */ }
         const cands = [];
@@ -249,7 +262,7 @@ function main() {
   }
 
   const pct = (n) => (total === 0 ? 0 : ((n / total) * 100).toFixed(1) + "%");
-  console.log("=== LongMemEval-S retrieval (product pipeline: phrase + weighted phrase-pair merge) ===");
+  console.log("=== LongMemEval-S retrieval (product pipeline: phrase + df-proxy IDF pair weights, 0.8.0) ===");
   console.log(`questions: ${total}`);
   console.log(`hit@1 ${hit1}  ${pct(hit1)}   hit@5 ${hit5}  ${pct(hit5)}   hit@10 ${hit10}  ${pct(hit10)}   MRR ${(mrrSum / Math.max(1, total)).toFixed(4)}`);
   console.log("per question type (hit@1 / hit@5 / MRR):");

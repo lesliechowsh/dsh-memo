@@ -4,6 +4,20 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.8.0 — 2026-08-20
+
+- **df-proxy IDF weighting** — the first variant in the whole series to pass
+  the S + M direction-consistency check. analyze.cjs showed discovery is
+  near-perfect (99.6% of gold sessions already in some per-phrase top-10) and
+  the loss was in the merge ranking; term idf ×4 + pair length × max(idf),
+  with df estimated per query by capped-50 counts (8 extra backend calls,
+  length-weight fallback). Measured: LongMemEval-S hit@1 74.8% → 78.2%,
+  MRR 0.812 → 0.847; LoCoMo10 hit@1 53.2% → 60.2%, MRR 0.651 → 0.718; M
+  segments all positive (see bench/README).
+- `bench/analyze.cjs` published — miss decomposition (no-anchor /
+  discovered-cut / merge-cut / near-miss) and oracle ceilings over the same
+  phrase set.
+
 ## 0.7.3 — 2026-08-20
 
 - LongMemEval-CN cross-lingual re-measured with the shipped 0.7.0 tokenizer

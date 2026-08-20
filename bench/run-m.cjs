@@ -263,7 +263,19 @@ async function main() {
         const pair = tokens[i] + " " + tokens[i + 1];
         phrases.push([pair, pair.length]);
       }
-      for (const [phrase, weight] of phrases) {
+      const dfCache = new Map();
+      const idfOf = (term) => {
+        if (!dfCache.has(term)) {
+          let rows = [];
+          try { rows = match.all(quotePhrase(term)); } catch (err) { /* none */ }
+          dfCache.set(term, Math.log((sessions.length + 1) / (1 + Math.min(rows.length, 50))));
+        }
+        return dfCache.get(term);
+      };
+      for (const [phrase, lenWeight] of phrases) {
+        const pts = phrase.split(" ");
+        const isPair = pts.length === 2;
+        const weight = isPair ? lenWeight * Math.max(idfOf(pts[0]), idfOf(pts[1])) : 4 * idfOf(pts[0]);
         for (const c of phraseTop(match, byId, phrase, termLimit)) {
           if (counts.has(c.id)) counts.set(c.id, counts.get(c.id) + weight);
           else { counts.set(c.id, weight); repTimes.set(c.id, c.time); }

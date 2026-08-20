@@ -170,10 +170,30 @@ return {
     async function tokenizedSearch(query, limit, since) {
       const tokens = tokenize(query)
       if (tokens.length <= 1) return []
-      // Phrase list: each token, then each consecutive token pair. Merge score
-      // = sum of matched phrase weights (token length; pair string length) —
-      // a local rarity proxy: longer content words and verbatim pairs
-      // discriminate better than common short words.
+      // 0.8.0: df-proxy IDF weights. One extra capped call per term (limit 50,
+      // count returned items) estimates document frequency; idf =
+      // log((N+1)/(1+min(df,50))) with N = listSessions count. Term weight =
+      // 4*idf; pair weight = pair length * max(idf of its terms). Falls back
+      // to plain length weights when estimation fails. Cost: up to 8 extra
+      // backend calls per search (23 vs 15) — disclosed in the README.
+      let idfReady = false
+      let idfValues = null
+      const ensureIdf = async () => {
+        if (idfReady) return
+        idfReady = true
+        const cache = new Map()
+        try {
+          const sessions = await sessionQuery.listSessions()
+          const n = sessions.length
+          for (const t of tokens) {
+            const page = await sessionQuery.searchSessions({ query: t, limit: 50 })
+            const df = Math.min((page.items || []).length, 50)
+            cache.set(t, Math.log((n + 1) / (1 + df)))
+          }
+          idfValues = cache
+        } catch (err) { idfValues = null }
+      }
+      // Phrase list: each token, then each consecutive token pair.
       const phrases = []
       for (const t of tokens) phrases.push([t, t.length])
       for (let i = 0; i + 1 < tokens.length; i++) {
@@ -181,7 +201,18 @@ return {
         phrases.push([pair, pair.length])
       }
       const collected = new Map()
-      for (const [phrase, weight] of phrases) {
+      for (const [phrase, lenWeight] of phrases) {
+        const pts = phrase.split(' ')
+        const isPair = pts.length === 2
+        await ensureIdf()
+        let weight = lenWeight
+        if (idfValues !== null) {
+          const a = idfValues.get(pts[0])
+          const b = isPair ? idfValues.get(pts[1]) : undefined
+          if (a !== undefined && (!isPair || b !== undefined)) {
+            weight = isPair ? lenWeight * Math.max(a, b) : 4 * a
+          }
+        }
         let page
         try {
           page = await sessionQuery.searchSessions({

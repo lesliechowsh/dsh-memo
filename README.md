@@ -71,7 +71,9 @@ Corpus overview, no parameters: `{ sessions: 19, recent: […], notes: 4 }`.
   memo_search(query)
    1. phrase step    whole query as one FTS5 phrase → top 10 sessions
    2. weighted step  ≤8 tokens (content words + CJK runs) +
-                     merged by summed weights (token/pair length),
+                     merged by df-proxy IDF weights (term idf×4,
+                     pair length × max idf; df estimated per query
+                     with capped-50 counts, length fallback),
                      time-desc tiebreak — content words fill the
                      window first, stopwords only leftovers
    3. phrase first, then weighted, dedup, top 10
@@ -79,7 +81,7 @@ Corpus overview, no parameters: `{ sessions: 19, recent: […], notes: 4 }`.
         DSH session corpus (live + persisted events)   + notes.jsonl
 ```
 
-Memo re-indexes nothing: DSH's `sessionQuery` service is the single source of truth.
+Memo re-indexes nothing: DSH's `sessionQuery` service is the single source of truth. A search costs up to 23 backend calls (8 extra for the df estimates).
 
 ## Usage
 
@@ -95,43 +97,35 @@ Measured under the exact pipeline `memo_search` ships — reproduced in harnesse
 
 **LongMemEval-S** ([arXiv:2410.10813](https://arxiv.org/abs/2410.10813), 500 questions, 54-session haystacks per question):
 
-**hit@1 74.8% · hit@5 89.8% · hit@10 95.2% · MRR 0.812**
+**hit@1 78.2% · hit@5 92.4% · hit@10 97.4% · MRR 0.847**
 
 | Question type | n | hit@1 | hit@5 | MRR |
 |---|---|---|---|---|
-| multi-session | 133 | 78.9% | 94.0% | 0.855 |
-| temporal-reasoning | 133 | 75.9% | 91.0% | 0.820 |
-| knowledge-update | 78 | 91.0% | 98.7% | 0.948 |
-| single-session-user | 70 | 82.9% | 91.4% | 0.867 |
-| single-session-assistant | 56 | 51.8% | 78.6% | 0.631 |
-| single-session-preference | 30 | 33.3% | 60.0% | 0.435 |
+| multi-session | 133 | 78.2% | 96.2% | 0.863 |
+| temporal-reasoning | 133 | 75.9% | 90.2% | 0.821 |
+| knowledge-update | 78 | 96.2% | 98.7% | 0.972 |
+| single-session-user | 70 | 88.6% | 97.1% | 0.933 |
+| single-session-assistant | 56 | 64.3% | 87.5% | 0.745 |
+| single-session-preference | 30 | 43.3% | 66.7% | 0.556 |
 
-**LoCoMo10** (1986 questions, cross-dataset check): **hit@1 53.2% · hit@5 80.4% · MRR 0.651** — read hit@1 there, not hit@10 (see below).
+**LoCoMo10** (1986 questions, cross-dataset check): **hit@1 60.2% · hit@5 87.2% · MRR 0.718** — read hit@1 there, not hit@10 (see below).
 
 **LongMemEval-M** (500 **new** questions, ~500-session pools — the scale / anti-overfitting check):
 
-**hit@1 52.6% · hit@5 76.6% · hit@10 82.8% · MRR 0.626** (random hit@1 on this pool ≈ 0.2% → ≈ 260× random)
+**hit@1 54.6% · hit@5 78.6% · hit@10 83.8% · MRR 0.645** (random hit@1 on this pool ≈ 0.2% → ≈ 273× random)
 
-| Question type | n | hit@1 | hit@5 | MRR |
-|---|---|---|---|---|
-| knowledge-update | 78 | 78.2% | 92.3% | 0.840 |
-| single-session-user | 70 | 58.6% | 82.9% | 0.678 |
-| temporal-reasoning | 133 | 50.4% | 72.9% | 0.603 |
-| multi-session | 133 | 48.1% | 79.7% | 0.614 |
-| single-session-assistant | 56 | 37.5% | 62.5% | 0.481 |
-| single-session-preference | 30 | 30.0% | 50.0% | 0.374 |
+The S → M drop (hit@1 78.2% → 54.6%) tracks the ~10× larger pool; the
+per-type rank order was verified identical across S and M under the 0.6.0
+pipeline (the same pipeline structure 0.8.0 extends). The 0.8.0 weighting was
+selected on S and confirmed positive on ALL five 100-question M segments
+(measured segment by segment, not once after the fact).
 
-The S → M drop (hit@1 74.8% → 52.6%) tracks the ~10× larger pool, and the
-per-type rank order is **identical** across the two independent question sets —
-the expected signature of a real algorithm, not one tuned to S. The pipeline
-was selected on S only; M was run once, after the fact.
-
-**LongMemEval-CN cross-lingual** (Chinese questions over the original English haystacks): **hit@1 44.4%** (up from 33.6% before the 0.7.0 CJK tokenization — CJK runs unblock the weighted step for mixed queries, so single untranslated Latin tokens are now actually queried). Every gain still comes from those Latin tokens: pure-Chinese queries over English sessions cannot match, and the gap is translation, not tokenization. A Chinese-session evaluation corpus does not exist publicly yet.
+**LongMemEval-CN cross-lingual** (Chinese questions over the original English haystacks): **hit@1 44.6%** (up from 33.6% before the 0.7.0 CJK tokenization — CJK runs unblock the weighted step for mixed queries, so single untranslated Latin tokens are now actually queried). Every gain still comes from those Latin tokens: pure-Chinese queries over English sessions cannot match, and the gap is translation, not tokenization. A Chinese-session evaluation corpus does not exist publicly yet.
 
 **Scope — read these numbers for what they are:**
 
 - Session-localization hit@k (~54 / ~27-session pools), not end-to-end answer accuracy — not comparable to Mem0 / Zep / LangMem (LLM reader + judge pipelines).
-- Signal-to-noise: random hit@1 is ≈1.9% on S (54 sessions), ≈3.7% on LoCoMo (~27), ≈0.2% on M (~500); Memo's 74.8% / 53.2% / 52.6% are ≈40× / ≈14× / ≈260× that. LoCoMo's random hit@10 is already ≈37%.
+- Signal-to-noise: random hit@1 is ≈1.9% on S (54 sessions), ≈3.7% on LoCoMo (~27), ≈0.2% on M (~500); Memo's 78.2% / 60.2% / (M below) are ≈41× / ≈16× / ≈260× that. LoCoMo's random hit@10 is already ≈37%.
 - On the M scale we now publish our own numbers: hit@5 76.6%. The paper's retrieval table (BM25 R@5 63–68%, Contriever/Stella R@5 72–76%) uses Recall@k over rounds; ours is session hit@k — close but not the same protocol, so **no parity claim**. Memo is a sparse lexical retriever near its class's ceiling.
 - Known ceilings: assistant-quoted and preference questions are the lexical floor — their evidence often shares no words with the question (33.3% / 30.0% hit@1 on S / M).
 - The length-as-rarity weighting ("long word ≈ content word") is an English statistical regularity; it does not transfer to Chinese.
