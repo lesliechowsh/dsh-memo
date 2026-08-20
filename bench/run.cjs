@@ -51,18 +51,16 @@ function haystackSessions(entry) {
   }));
 }
 
-function buildQueries(question) {
+function buildQuery(question) {
   const clean = String(question || "").replace(/"/g, " ");
-  // Mode A: DSH engine-exact — the whole query as one inert FTS5 phrase.
-  const phrase = '"' + clean.trim() + '"';
-  // Mode B: tokenized OR — question-style recall; each token a quoted term.
+  // Tokenized OR — question-style recall; each token a quoted term.
   const tokens = [...new Set(clean.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))];
-  const orQuery = tokens.map((t) => '"' + t + '"').join(" OR ");
-  return { phrase, orQuery };
+  return tokens.map((t) => '"' + t + '"').join(" OR ");
 }
 
 function runMode(db, insert, search, questions, build) {
   let hit1 = 0, hit5 = 0, hit10 = 0, mrrSum = 0, total = 0;
+  const byType = new Map();
   const misses = [];
   for (const entry of questions) {
     const gold = goldSessions(entry);
@@ -90,15 +88,29 @@ function runMode(db, insert, search, questions, build) {
       }
     }
     mrrSum += rr;
+    const type = String(entry.question_type || "unknown");
+    const t = byType.get(type) || { n: 0, hit1: 0, hit5: 0, mrr: 0 };
+    t.n += 1;
+    if (rr > 0 && hit) { t.hit1 += (rr === 1 ? 1 : 0); t.hit5 += 1; }
+    t.mrr += rr;
+    byType.set(type, t);
     if (!hit && misses.length < 5) misses.push({ qid: entry.question_id, query: query.slice(0, 50), gold: [...gold], got: rows.slice(0, 3) });
   }
   const pct = (n) => (total === 0 ? 0 : ((n / total) * 100).toFixed(1) + "%");
+  const types = [...byType.entries()].map(([name, t]) => ({
+    name,
+    n: t.n,
+    hit1: ((t.hit1 / t.n) * 100).toFixed(1) + "%",
+    hit5: ((t.hit5 / t.n) * 100).toFixed(1) + "%",
+    mrr: (t.mrr / t.n).toFixed(3),
+  })).sort((a, b) => b.n - a.n);
   return {
     total,
     hit1: `${hit1}  ${pct(hit1)}`,
     hit5: `${hit5}  ${pct(hit5)}`,
     hit10: `${hit10}  ${pct(hit10)}`,
     mrr: (mrrSum / Math.max(1, total)).toFixed(4),
+    types,
     misses,
   };
 }
@@ -115,16 +127,15 @@ function main() {
     "SELECT id, snippet(docs, 1, '[', ']', '…', 8) snip, bm25(docs) rank FROM docs WHERE docs MATCH ? ORDER BY rank LIMIT ?"
   );
 
-  const phrase = runMode(db, insert, search, questions, (q) => buildQueries(q).phrase);
-  const tokenized = runMode(db, insert, search, questions, (q) => buildQueries(q).orQuery);
+  const tokenized = runMode(db, insert, search, questions, (q) => buildQuery(q));
 
   console.log("=== LongMemEval-S retrieval (session-level, FTS5/bm25) ===");
-  console.log(`A) whole-question phrase (DSH engine semantics):  ${phrase.total} q`);
-  console.log(`   hit@1 ${phrase.hit1}  hit@5 ${phrase.hit5}  hit@10 ${phrase.hit10}  MRR ${phrase.mrr}`);
-  console.log(`B) tokenized OR (question-style recall):           ${tokenized.total} q`);
-  console.log(`   hit@1 ${tokenized.hit1}  hit@5 ${tokenized.hit5}  hit@10 ${tokenized.hit10}  MRR ${tokenized.mrr}`);
+  console.log(`questions: ${tokenized.total}`);
+  console.log(`hit@1 ${tokenized.hit1}  hit@5 ${tokenized.hit5}  hit@10 ${tokenized.hit10}  MRR ${tokenized.mrr}`);
+  console.log("per question type (hit@1 / hit@5 / MRR):");
+  for (const t of tokenized.types) console.log(`  ${t.name.padEnd(24)} n=${String(t.n).padEnd(4)} ${t.hit1}  ${t.hit5}  ${t.mrr}`);
   if (tokenized.misses.length > 0) {
-    console.log("sample misses (mode B):");
+    console.log("sample misses:");
     for (const m of tokenized.misses.slice(0, 3)) console.log(" ", JSON.stringify(m).slice(0, 260));
   }
 }

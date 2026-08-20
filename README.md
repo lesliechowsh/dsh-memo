@@ -54,16 +54,20 @@ Writing (`memo_remember`) and reading (`memo_search` retrieval with snippets, ti
 
 ## Benchmark
 
-Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813) (500 questions, 54-session haystacks per question), session-level retrieval with SQLite FTS5/BM25 — the same engine class as DSH's official session search:
+Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813) (500 questions, 54-session haystacks per question), session-level retrieval with SQLite FTS5/BM25 — the same engine class as DSH's official session search. Full protocol and harness: [`bench/`](bench/README.md).
 
-| Query mode | hit@1 | hit@5 | hit@10 | MRR |
+**Overall: hit@1 86.6% · hit@5 97.0% · hit@10 98.8% · MRR 0.911**
+
+| Question type | n | hit@1 | hit@5 | MRR |
 |---|---|---|---|---|
-| Whole-question phrase (raw DSH semantics) | 0.2% | 0.2% | 0.2% | 0.002 |
-| **Memo retrieval (phrase-first + tokenized merge)** | **86.6%** | **97.0%** | **98.8%** | **0.911** |
+| multi-session | 133 | 87.2% | 97.7% | 0.913 |
+| temporal-reasoning | 133 | 82.7% | 98.5% | 0.883 |
+| knowledge-update | 78 | 94.9% | 100.0% | 0.971 |
+| single-session-user | 70 | 87.1% | 100.0% | 0.923 |
+| single-session-assistant | 56 | 100.0% | 100.0% | 1.000 |
+| single-session-preference | 30 | 53.3% | 96.7% | 0.670 |
 
-The gap is why Memo exists: the raw search API treats a query as one exact phrase, which question-style queries almost never match. `memo_search` fixes this by merging phrase hits with per-term matches ranked by matched-term count. For reference, the hybrid BM25+vector baseline reported by comparable tools is ~95% R@5 on the same benchmark.
-
-Full protocol and harness: `bench/run.cjs` in the repository.
+`memo_search` ships this retrieval: phrase-first exact matches, then per-term matches merged by matched-term count.
 
 ## License
 

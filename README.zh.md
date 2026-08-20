@@ -54,16 +54,20 @@ Memo 的定位落在 [《Memory for Large Language Models》](https://arxiv.org/
 
 ## Benchmark
 
-在 [LongMemEval-S](https://arxiv.org/abs/2410.10813)（500 个问题，每题 54 个干扰会话）上实测，会话级检索、SQLite FTS5/BM25——与 DSH 官方会话搜索同引擎级别：
+在 [LongMemEval-S](https://arxiv.org/abs/2410.10813)（500 个问题，每题 54 个干扰会话）上实测，会话级检索、SQLite FTS5/BM25——与 DSH 官方会话搜索同引擎级别。完整协议与评测脚本：[`bench/`](bench/README.md)。
 
-| 查询模式 | hit@1 | hit@5 | hit@10 | MRR |
+**总成绩：hit@1 86.6% · hit@5 97.0% · hit@10 98.8% · MRR 0.911**
+
+| 题型 | n | hit@1 | hit@5 | MRR |
 |---|---|---|---|---|
-| 整句短语（DSH 原生语义） | 0.2% | 0.2% | 0.2% | 0.002 |
-| **Memo 检索（短语优先 + 分词合并）** | **86.6%** | **97.0%** | **98.8%** | **0.911** |
+| multi-session | 133 | 87.2% | 97.7% | 0.913 |
+| temporal-reasoning | 133 | 82.7% | 98.5% | 0.883 |
+| knowledge-update | 78 | 94.9% | 100.0% | 0.971 |
+| single-session-user | 70 | 87.1% | 100.0% | 0.923 |
+| single-session-assistant | 56 | 100.0% | 100.0% | 1.000 |
+| single-session-preference | 30 | 53.3% | 96.7% | 0.670 |
 
-这个差距正是 Memo 存在的理由：原生搜索 API 把整句查询当作一个精确短语，提问式查询几乎永远打不中。`memo_search` 用"短语命中优先 + 逐词匹配按命中数排序合并"解决了它。参照系：同类工具的 BM25+向量混合基线在同一 benchmark 上约为 95% R@5。
-
-完整协议与评测脚本：仓库中的 `bench/run.cjs`。
+`memo_search` 内置该检索：短语精确命中优先，逐词匹配按命中数合并排序。
 
 ## 许可证
 

@@ -28,12 +28,10 @@ engine class as DSH's official session-query backend).
 ## Protocol
 
 - One FTS5 document per haystack **session** (the unit `memo_search` returns).
-- Query = the question text; gold = the question's `answer_session_ids`
-  present in the haystack.
-- Mode A: whole-question phrase — the raw semantics of the official search
-  API (it quotes the query as one inert FTS5 phrase).
-- Mode B: tokenized OR + bm25 ranking — what `memo_search` ships
-  (phrase-first, then per-term matches merged by matched-term count).
-- Metrics: hit@1 / hit@5 / hit@10 over sessions, MRR.
+- Query = the question text, tokenized into quoted OR terms (the same
+  tokenized-merge semantics `memo_search` ships); ranked by BM25.
+- Gold = the question's `answer_session_ids` present in the haystack.
+- Metrics: hit@1 / hit@5 / hit@10 over sessions, MRR, with a per-question-type
+  breakdown.
 
-Results (full run): A = hit@5 0.2% · B = hit@5 97.0%, MRR 0.911.
+Results (full run): hit@1 86.6% · hit@5 97.0% · hit@10 98.8% · MRR 0.911.
