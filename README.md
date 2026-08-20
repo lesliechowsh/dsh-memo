@@ -25,7 +25,7 @@ DeepSeek Harness already records every session, message, and tool call. Memo tur
 
 ## Quick example
 
-> You: *"我们之前聊过 Dieter Rams 的事吗？"*
+> You: *"Did we ever discuss Dieter Rams?"*
 > Agent calls `memo_search("Dieter Rams")` →
 
 ```json
@@ -33,8 +33,8 @@ DeepSeek Harness already records every session, message, and tool call. Memo tur
   "sessions": [
     {
       "sessionId": "session-49924467-9cd1-414a-9998-f207782c72ad",
-      "title": "Weniger 主题设计",
-      "snippet": "…「DESIGN DIETER RAMS」是已注册商标，Rams Foundation 积极管理其姓名与遗产…",
+      "title": "Weniger theme design",
+      "snippet": "…'DESIGN DIETER RAMS' is a registered trademark, and the Rams Foundation actively manages the name and estate…",
       "time": 1787078839061,
       "seq": 391234,
       "source": "event",
@@ -46,7 +46,7 @@ DeepSeek Harness already records every session, message, and tool call. Memo tur
 }
 ```
 
-> Agent: *"有——我们在 Weniger 主题项目里调研过：'DESIGN DIETER RAMS' 是注册商标，所以产品改名为 Weniger……"*
+> Agent: *"Yes — we researched it in the Weniger theme project: 'DESIGN DIETER RAMS' is a registered trademark, so the product was renamed Weniger…"*
 
 ## Why Memo
 
