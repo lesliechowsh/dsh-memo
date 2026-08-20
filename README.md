@@ -21,8 +21,6 @@
       "title": "Weniger theme design",
       "snippet": "…'DESIGN DIETER RAMS' is a registered trademark, and the Rams Foundation actively manages the name and estate…",
       "time": 1787078839061,
-      "seq": 391234,
-      "source": "event",
       "mode": "phrase"
     }
   ],
@@ -39,25 +37,7 @@
 dsh plugin --profile web add dsh-memo@latest
 ```
 
-Restart `dsh web` — the three `memo_*` tools appear in your agent's tool list. That's the whole setup.
-
-<details>
-<summary>Deployments without the <code>dsh plugin</code> subcommand (manual)</summary>
-
-1. `cd "$DSH_HOME/profiles/web" && npm install dsh-memo`
-2. Append to the profile's `cordis.patch.yml`:
-
-   ```yaml
-   - insert:
-       - id: memo
-         name: 'dsh-memo'
-   ```
-
-3. Restart `dsh web`.
-
-</details>
-
-Uninstall: `dsh plugin --profile web remove dsh-memo`.
+Restart `dsh web` — the three `memo_*` tools appear in your agent's tool list. That's the whole setup. (Uninstall: `dsh plugin --profile web remove dsh-memo`; manual profile-edit steps for CLI-less deployments are in [CONTRIBUTING.md](CONTRIBUTING.md).)
 
 ## What you get
 
@@ -65,157 +45,53 @@ Uninstall: `dsh plugin --profile web remove dsh-memo`.
 - **Nothing else to run.** No vector database, no embedding API, no API keys, no background indexer — it searches the corpus DSH already records, through the official `sessionQuery` backend.
 - **Everything stays local.** Sessions stay in DSH's store; your distilled notes are one human-readable JSONL file.
 
-Memo deliberately does not re-index your history into its own store. If you need cross-app memory outside DSH with embedding-based search, projects like Mem0 or Letta are built for that; Memo keeps DSH's own corpus as the single source of truth.
-
-## Requirements
-
-- **DeepSeek Harness** with the `sessionQuery` service in the composition (shipped in the standard `web` profile).
-- The deployment's session-query index must be open — if it is configured with `openAt: "never"`, session search is disabled and `memo_search` reports it honestly instead of guessing.
-- **Chinese / CJK**: the backend's unicode61 FTS5 index treats contiguous CJK runs as single tokens, so Chinese sessions are searchable only by exact verbatim runs. `memo_search` returns a `cjkWarning` for Chinese queries; the fix is index-side and belongs upstream (see [`bench/`](bench/README.md)).
-- Notes need `$DSH_HOME` resolvable at tool-execution time (standard on every DSH deployment).
-- No other services, no API keys, no network calls.
+Memo deliberately does not re-index your history into its own store. If you need cross-app memory outside DSH with embedding-based search, projects like Mem0 or Letta are built for that.
 
 ## Tools
 
-### `memo_search`
+### `memo_search(query, limit?, sessionId?, since?, tags?)`
 
-Search every past session in the workspace plus your memo notes.
+Search every past session in the workspace plus your memo notes. `limit` defaults to 10 (cap 50); `sessionId` restricts to one session; `since` filters by epoch-ms; `tags` filters notes by tag. Returns `{ sessions, notes, limit }`:
 
-| Parameter | Type | Default | Meaning |
-|---|---|---|---|
-| `query` | string | required | Search terms; matched against session text and memo notes. |
-| `limit` | number | 10 (cap 50) | Max hits per source. |
-| `sessionId` | string | — | Limit the search to one session (searches its events). |
-| `since` | number | — | Only hits after this epoch-ms time. |
-| `tags` | string | — | Comma-separated tags; a note must carry at least one to be returned. |
+- `sessions`: `{ sessionId, title (null when untitled), snippet, time, mode }` — ordered phrase-first, then by weighted token/pair score; `mode` is `"phrase"` (verbatim question hit) or `"terms"`.
+- `notes`: most recent matches, newest last.
+- When the deployment's session-query index is closed or the service is missing, the result carries an `error` string instead of fabricated hits — and Chinese queries carry a `cjkWarning` (see [Requirements](#requirements)).
 
-Returns:
+### `memo_remember(text, tags?)`
 
-```json
-{
-  "sessions": [
-    {
-      "sessionId": "session-49924467-…",
-      "title": "Weniger theme design",   // null when the session has no title snapshot
-      "snippet": "…matching text…",
-      "time": 1787078839061,              // epoch ms of the matching event
-      "source": "event",
-      "mode": "phrase"                    // "phrase" = verbatim question hit, "terms" = weighted token/pair hit
-    }
-  ],
-  "notes": [
-    { "time": 1787212144789, "text": "…", "tags": ["release"] }
-  ],
-  "limit": 10
-}
-```
+Write one durable note — facts, decisions, preferences that survive across sessions and appear in `memo_search` results. Returns `{ ok, note, path }`; identical text returns the existing note as `{ ok: true, duplicate: true, note }` instead of appending. Notes are one JSONL record per line at `$DSH_HOME/memo/notes.jsonl`.
 
-- `sessions` are ordered phrase-first, then by weighted token/pair score;
-  `notes` are the most recent matches, newest last.
-- When the deployment's session-query index is closed or the service is
-  missing, the result carries an `error` string instead of fabricated hits.
+### `memo_stats()`
 
-### `memo_remember`
-
-Write one durable note — facts, decisions, preferences that survive across
-sessions and appear in `memo_search` results.
-
-| Parameter | Type | Default | Meaning |
-|---|---|---|---|
-| `text` | string | required | The note — one concrete fact, decision, or preference. |
-| `tags` | string | — | Comma-separated tags. |
-
-Returns `{ ok, note, path }`; if a note with identical text already exists,
-nothing is appended and the result is `{ ok: true, duplicate: true, note }`
-with the existing note. Notes are one JSONL record per line at
-`$DSH_HOME/memo/notes.jsonl`.
-
-### `memo_stats`
-
-Corpus overview — no parameters.
-
-```json
-{
-  "sessions": 19,
-  "recent": [{ "id": "session-…", "cwd": "…", "createdAt": 1787…, "title": "…" }],
-  "notes": 4
-}
-```
-
+Corpus overview, no parameters: `{ sessions: 19, recent: […], notes: 4 }`.
 
 ## How it works
 
 ```
-                       ┌─────────────────────────────────────────┐
-  memo_search(query) ─▶│  1. phrase step   whole query, quoted    │
-                       │     FTS5 phrase → top 10 sessions        │
-                       │  2. weighted step  ≤8 tokens + pairs,    │
-                       │     top 10 each, merged by summed        │
-                       │     weights (token/pair length),         │
-                       │     time-desc tiebreak                   │
-                       │  3. phrase first, then weighted, dedup   │
-                       └───────────────┬──────────────────────────┘
-                                       │ official sessionQuery (FTS5)
-                                       ▼
-        DSH session corpus (live + persisted events)     notes.jsonl
-                                       │                            │
-                                       ▼                            ▼
-                    sessions + titles + snippets          matched notes
+  memo_search(query)
+   1. phrase step    whole query as one FTS5 phrase → top 10 sessions
+   2. weighted step  ≤8 tokens + consecutive pairs, top 10 each,
+                     merged by summed weights (token/pair length),
+                     time-desc tiebreak — content words fill the
+                     window first, stopwords only leftovers
+   3. phrase first, then weighted, dedup, top 10
+                    ── official sessionQuery (FTS5) ──
+        DSH session corpus (live + persisted events)   + notes.jsonl
 ```
 
-- **Reads the official corpus** — DSH's `sessionQuery` service is the single source of truth; Memo re-indexes nothing, duplicates nothing.
-- **Two-layer recall** — phrase-first exact matches, then each question token and consecutive token pair matched as its own phrase, merged by summed weights (token length, pair length — a local rarity proxy). Query tokens are content-word-first: stopwords only fill leftover window slots. Question-style queries work, not just keywords.
-- **Notes are plain JSONL** at `$DSH_HOME/memo/notes.jsonl` — human-readable, editable, portable.
+Memo re-indexes nothing: DSH's `sessionQuery` service is the single source of truth.
 
 ## Usage
 
-### Recall anything from any session
-
-Ask naturally — the agent reaches for `memo_search` when the answer depends on history:
-
-> "Did we ever discuss SSH-based coding agents? What did we conclude?"
-
-Filter by time or session when you know the neighborhood:
-
-```
-memo_search(query: "benchmark", since: 1787000000000)
-memo_search(query: "theme tokens", sessionId: "session-49924467-…")
-```
-
-### Write durable notes
-
-```
-memo_remember(text: "Product naming: dsh- prefix + snake_case memo_* tools. No real-person names (Dieter Rams lesson).", tags: "naming,convention")
-```
-
-Re-writing the same text returns the existing note instead of duplicating it.
-Find notes by tag:
-
-```
-memo_search(query: "naming", tags: "convention")
-```
-
-### Check the corpus
-
-```
-memo_stats()  →  { sessions: 19, notes: 4, recent: […] }
-```
+The agent reaches for `memo_search` by itself when the answer depends on history ("Did we ever discuss SSH-based coding agents?"). Filter when you know the neighborhood: `memo_search(query: "benchmark", since: 1787000000000)`. Write distilled facts with `memo_remember(text: …, tags: "naming,convention")`, find them later with `memo_search(query: "naming", tags: "convention")`.
 
 ## Design & research grounding
 
-Memo sits cleanly on the memory taxonomy of [Memory for Large Language Models](https://arxiv.org/abs/2607.25380) (Zhoubian, Zhang, Kharlamov & Tang — THUNLP · Tsinghua / NUS), which characterizes memory along three orthogonal axes:
-
-| Axis | Memo |
-|---|---|
-| Representation | **Explicit** — independently addressable JSONL logs and notes, decoupled from model computation |
-| Update dynamics | **Online** — DSH appends every message, tool call, and result as it happens; `memo_remember` writes distilled notes |
-| Persistence | **Long-term** — survives context windows, sessions, and process restarts |
-
-Writing (`memo_remember`) and reading (`memo_search`) follow the survey's memory-operation view; consolidation and compression are on the roadmap.
+Memo maps onto the memory taxonomy of [Memory for Large Language Models](https://arxiv.org/abs/2607.25380) (Zhoubian, Zhang, Kharlamov & Tang — THUNLP · Tsinghua / NUS): **explicit** representation (independently addressable JSONL), **online** updates (DSH appends as it happens), **long-term** persistence.
 
 ## Benchmark
 
-Measured on three evaluations under the exact pipeline `memo_search` ships — phrase-first plus weighted token/pair merge, with the official backend's page-size truncation and representative-event ranking — reproduced in the harnesses over the same FTS5 engine class the backend uses. Full protocol, environment, and the variant-selection experiment log: [`bench/`](bench/README.md).
+Measured under the exact pipeline `memo_search` ships — reproduced in harnesses over the same FTS5 engine class the backend uses. Full protocol, environment, and the variant-selection experiment log: [`bench/`](bench/README.md).
 
 **LongMemEval-S** ([arXiv:2410.10813](https://arxiv.org/abs/2410.10813), 500 questions, 54-session haystacks per question):
 
@@ -230,48 +106,51 @@ Measured on three evaluations under the exact pipeline `memo_search` ships — p
 | single-session-assistant | 56 | 51.8% | 78.6% | 0.631 |
 | single-session-preference | 30 | 33.3% | 60.0% | 0.435 |
 
-**LoCoMo10** ([snap-research/LoCoMo](https://github.com/snap-research/LoCoMo), 1986 questions over 10 very long conversations, cross-dataset check):
+**LoCoMo10** (1986 questions, cross-dataset check): **hit@1 53.2% · hit@5 80.4% · MRR 0.651** — read hit@1 there, not hit@10 (see below).
 
-**hit@1 53.2% · hit@5 80.4% · hit@10 91.1% · MRR 0.651**
-
-**LongMemEval-CN cross-lingual** (Chinese questions over the original English haystacks): **hit@1 33.6%** — and that number comes entirely from Latin tokens left untranslated in the questions; pure-Chinese queries cannot match English sessions, and no tokenizer change fixes that (the gap is translation). `memo_search` detects Chinese queries and returns a `cjkWarning` about the backend's unicode61 CJK limitation instead of pretending; a Chinese-session evaluation corpus does not exist publicly yet.
+**LongMemEval-CN cross-lingual** (Chinese questions over the original English haystacks): **hit@1 33.6%**, entirely from Latin tokens left untranslated in the questions — the gap is translation, not tokenization. A Chinese-session evaluation corpus does not exist publicly yet.
 
 **Scope — read these numbers for what they are:**
 
-- These are **session-localization** hit@k numbers (does the gold session enter the top-k of ~54 and ~27-session pools), not end-to-end answer accuracy. Do not compare them with the end-to-end QA accuracy reported by systems like Mem0 / Zep / LangMem (LLM reader + judge pipelines) — that is a different quantity.
-- **Random baselines for signal-to-noise**: on LongMemEval-S a random retriever gets hit@1 ≈ 1.9% (1/54); Memo's 74.8% is ≈ 40× that. On LoCoMo10 a random retriever gets hit@1 ≈ 3.7% (1/27); Memo's 53.2% is ≈ 14× that. **On LoCoMo10, prefer hit@1**: with ~27-session pools, random hit@10 is already ≈ 37%, so the hit@10 column carries little information there.
-- **Not comparable to the LongMemEval paper's retrieval table.** Its BM25 (R@5 63–68%) and Contriever/Stella dense retrievers (R@5 72–76%) run on the 500-session M scale with Recall@k. Memo's hit@5 on the 54-session S scale is numerically similar — but the pool is ~10× smaller and hit@k is a looser protocol, so **no claim of parity with dense retrievers follows**. Memo is a sparse lexical retriever near its class's ceiling; it does not compete with vector/graph memory systems.
-- **Known ceilings**: knowledge-update (hit@1 91.0%) works because question and evidence share words; assistant-quoted and preference questions (51.8% / 33.3%) are the lexical floor — their evidence often shares no words with the question, and no tokenizer or weight tuning closes a semantic gap.
-- **English-specific assumption**: the length-as-rarity weighting ("long word ≈ content word") is an English statistical regularity. It does not transfer to Chinese (and the backend's unicode61 index has its own CJK limitation — see [Requirements](#requirements)).
+- Session-localization hit@k (~54 / ~27-session pools), not end-to-end answer accuracy — not comparable to Mem0 / Zep / LangMem (LLM reader + judge pipelines).
+- Signal-to-noise: random hit@1 is ≈1.9% on S (54 sessions), ≈3.7% on LoCoMo (~27); Memo's 74.8% / 53.2% are ≈40× / ≈14× that. LoCoMo's random hit@10 is already ≈37%.
+- Not comparable to the LongMemEval paper's retrieval table (BM25 R@5 63–68%, Contriever/Stella R@5 72–76% on the 500-session M scale, Recall@k protocol). No claim of parity with dense retrievers; Memo is a sparse lexical retriever near its class's ceiling.
+- Known ceilings: assistant-quoted (51.8%) and preference (33.3%) questions are the lexical floor — their evidence often shares no words with the question.
+- The length-as-rarity weighting ("long word ≈ content word") is an English statistical regularity; it does not transfer to Chinese.
 
 ## A note from the maintainer, before the claims
 
-I started Memo because I kept getting burned by memory tools whose benchmark numbers I couldn't reproduce. So this project runs on one rule, stated plainly: **publish only what the shipped product measures, and publish the trail that produced it.** What that means in practice:
+I started Memo because I kept getting burned by memory tools whose benchmark numbers I couldn't reproduce. So this project runs on one rule: **publish only what the shipped product measures, and publish the trail that produced it.**
 
-- **The benchmark harnesses are copies of the real pipeline** — page sizes, ranking, truncation — not a re-implementation of the idea. Same dataset bytes, same numbers; environment recorded. When I once caught the harness over-collecting candidates that the product could never see, the published numbers went *down* (0.3.1), not up.
-- **Rejected experiments are published too.** The equal-weight bigram variant collapsed hit@1 to 5.2%; the wider per-term page wasn't worth 2× the API calls; a deterministic re-implementation of a time-aware expansion idea from a paper I respect made temporal recall *worse* — and that one is in the log with the exact numbers, because negative results are results.
-- **My mistakes are in the CHANGELOG, not deleted.** Session ids read from the wrong field (0.3.0), titles silently nulled (0.3.1), and three bugs found by review in 0.5.0 — one of which, stopwords crowding content words out of the query window, meant the headline recall number was understated for two releases. Fixed, re-measured, and written down.
-- **Limitations are stated where they hurt.** Session localization is not end-to-end answer accuracy. The two weakest question types are named with their numbers. The length-as-rarity weighting rests on an English regularity — long word ≈ content word — and does **not** transfer to Chinese; declared below, not hidden. Chinese queries hit the backend's unicode61 CJK limitation and get a `cjkWarning` instead of silent misses.
-- **No strawman baselines, no borrowed numbers.** You will not find a comparison row for a process this product does not run, or a third-party self-reported figure presented as a reference.
+- **The harnesses are copies of the real pipeline** — page sizes, ranking, truncation. Same dataset bytes, same numbers. When I caught the harness over-collecting candidates the product could never see, the published numbers went *down* (0.3.1), not up.
+- **Rejected experiments are published too.** Equal-weight bigrams collapsed hit@1 to 5.2%; a wider per-term page wasn't worth 2× the API calls; a deterministic re-implementation of a time-aware expansion idea from a paper I respect made temporal recall *worse* — negative results are results, so they're in the log with the exact numbers.
+- **My mistakes are in the CHANGELOG, not deleted.** Session ids read from the wrong field (0.3.0); titles silently nulled (0.3.1); three review-found bugs in 0.5.0, one of which — stopwords crowding content words out of the query window — had the headline recall number understated for two releases. Fixed, re-measured, written down.
+- **Limitations are stated where they hurt.** The weak types are named with their numbers; the English-only weighting assumption and the CJK backend limitation are declared above, not hidden.
+- **No strawman baselines, no borrowed numbers.**
 
 If you find a number here that doesn't reproduce, that is the highest-value bug report this project can receive — please [open an issue](https://github.com/lesliechowsh/dsh-memo/issues).
 
+## Requirements
+
+- **DeepSeek Harness** with the `sessionQuery` service (shipped in the standard `web` profile); the deployment's session-query index must be open — `memo_search` reports a closed index honestly instead of guessing.
+- **Chinese / CJK**: the backend's unicode61 FTS5 index treats contiguous CJK runs as single tokens, so Chinese sessions are searchable only by exact verbatim runs; `memo_search` returns a `cjkWarning`. The fix is index-side and belongs upstream (details in [`bench/`](bench/README.md)).
+- Notes need `$DSH_HOME` resolvable at tool-execution time. No other services, no API keys, no network calls.
+
 ## Roadmap
 
-- [x] LoCoMo10 secondary benchmark
-- [x] LongMemEval-CN cross-lingual benchmark (Chinese questions; translation gap measured)
-- [x] Tag search and note deduplication
-- [x] 0.5.0 bug fixes — content-word-first tokenization (hit@1 54.6% → 74.8%), empty-token note leak, newline-safe note append
-- [x] Deterministic time-aware retrieval tested and rejected with published evidence (hard filtering hurts)
-- [ ] Chinese-session evaluation corpus (blocked: none exists publicly; also needs upstream CJK-aware tokenization)
-- [ ] End-to-end QA (retrieval + answer) on a 100-question subset — needs model-quota approval
-- [ ] Dense retrieval for the lexical ceiling (assistant-quoted / preference types) — deliberately out of scope while "zero infrastructure" holds
+- [x] LoCoMo10 secondary benchmark · LongMemEval-CN cross-lingual benchmark
+- [x] Tag search and note deduplication · 0.5.0 bug fixes (content-word-first tokenization, empty-token note leak, newline-safe append)
+- [x] Deterministic time-aware retrieval tested and rejected with published evidence
+- [ ] LongMemEval-M (500-session pools) as a scale / anti-overfitting check — in progress
+- [ ] Chinese-session evaluation corpus (blocked: none exists publicly; needs upstream CJK-aware tokenization)
+- [ ] End-to-end QA (retrieval + answer) — needs model-quota approval
+- [ ] Dense retrieval for the lexical ceiling — deliberately out of scope while "nothing else to run" holds
 
 ## Support & contributing
 
 - Questions and bug reports: [GitHub Issues](https://github.com/lesliechowsh/dsh-memo/issues)
 - Reproduce the benchmark or add a new one: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Security reports: [SECURITY.md](SECURITY.md) — Memo never sends data off your machine; its only network-free dependency is the local DSH session store.
+- Security reports: [SECURITY.md](SECURITY.md) — Memo never sends data off your machine.
 
 ## License
 

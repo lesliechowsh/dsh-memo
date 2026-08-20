@@ -72,6 +72,17 @@ exports.apply = function (ctx) {
     return false;
   }
 
+  // Note writes are serialized per plugin instance (promise chain): the
+  // dedup check + append run as one critical section, so concurrent
+  // memo_remember calls in the same process cannot clobber each other.
+  // Separate processes sharing one notes file remain racy (documented).
+  let noteQueue = Promise.resolve();
+  function enqueueNote(task) {
+    const run = noteQueue.then(task, task);
+    noteQueue = run.then(() => {}, () => {});
+    return run;
+  }
+
   async function findDuplicate(path, text) {
     const needle = String(text || "").trim().toLowerCase();
     if (needle === "") return null;
@@ -248,10 +259,12 @@ exports.apply = function (ctx) {
         text: String(args.text),
         tags: typeof args.tags === "string" ? args.tags.split(",").map((s) => s.trim()).filter(Boolean) : [],
       };
-      const existing = await findDuplicate(path, record.text);
-      if (existing !== null) return { ok: true, duplicate: true, note: existing, path };
-      const ok = await appendNote(path, record);
-      return { ok, note: ok ? record : null, path };
+      return await enqueueNote(async () => {
+        const existing = await findDuplicate(path, record.text);
+        if (existing !== null) return { ok: true, duplicate: true, note: existing, path };
+        const ok = await appendNote(path, record);
+        return { ok, note: ok ? record : null, path };
+      });
     },
   });
 
