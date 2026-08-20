@@ -90,9 +90,9 @@ Memo re-indexes nothing: DSH's `sessionQuery` service is the single source of tr
 After installing, ask your agent these three things in one conversation. Each
 one needs memory of the *previous* exchange, so each exercises the search:
 
-1. *"记一下：这个项目发布渠道的约定是 npm 为唯一正式渠道。"* (the agent writes a note)
-2. *"我们记的'发布渠道的约定'是什么？"* (the agent must recall it — `memo_search` finds the note)
-3. *"再记一条：demo 数据都放在 bench 目录。"* then *"我们记的 demo 数据放在哪？"* (a second round of the same loop)
+1. *"Remember this: npm is the only official release channel for this project."* (the agent writes a note)
+2. *"What was the 'release channel' convention we wrote down?"* (the agent must recall it — `memo_search` finds the note)
+3. *"Also remember: demo data lives in the bench directory."* then *"Where did we say the demo data lives?"* (a second round of the same loop)
 
 You just experienced the whole product: write, recall, write, recall — no
 setup beyond the install, no external service involved.
