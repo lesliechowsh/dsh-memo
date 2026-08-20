@@ -19,7 +19,7 @@ status:     beta — no breaking API changes inside the 0.x line; see CHANGELOG
 support:    GitHub Issues
 ```
 
-> **For** DSH users who need their agent to answer "what did we decide three days ago?" — **Memo is** a zero-infrastructure memory plugin that **turns the session corpus DSH already records into searchable memory**. Unlike external memory frameworks, it re-indexes nothing, stores nothing outside your machine, and runs on the official `sessionQuery` backend.
+> **For** DSH users who need their agent to answer "what did we decide three days ago?" — **Memo is** a zero-infrastructure memory plugin that **turns the session corpus DSH already records into searchable memory**. Unlike external memory frameworks, it re-indexes nothing, stores nothing outside your machine, runs on the official `sessionQuery` backend — and publishes every benchmark number with the experiment trail that produced it.
 
 DeepSeek Harness already records every session, message, and tool call. Memo turns that corpus into searchable memory your agent can actually use: ask about anything from any past session, and get the evidence back in one tool call.
 
@@ -56,6 +56,16 @@ DeepSeek Harness already records every session, message, and tool call. Memo tur
 - **Honest numbers** — retrieval quality is measured on LongMemEval-S and LoCoMo10 with harnesses that reproduce the shipped algorithm, and published warts and all (see [Benchmark](#benchmark)). No cherry-picked baselines.
 
 External memory frameworks (Mem0, Letta, etc.) embed and re-store your data in infrastructure they manage; Memo keeps DSH's own store as the single source of truth and adds nothing to operate. If you need cross-app memory outside DSH, those tools are the better fit.
+
+## Trust: the evidence trail
+
+The differentiator is not a claim — it's that every claim can be checked:
+
+- **Every number is the shipped product's own.** The benchmark harnesses in [`bench/`](bench/README.md) reproduce the exact pipeline `memo_search` runs — page sizes, ranking, truncation — not an idealized variant. Rerun them with the same dataset bytes and you get the same numbers; the environment is recorded.
+- **Rejected experiments are published.** The variant log shows the dead ends, not just the winner: equal-weight bigrams collapsed hit@1 to 5.2%, a wider per-term page wasn't worth 2× the API calls. You can see what was tried and why it lost.
+- **Mistakes are corrected in the open.** CHANGELOG records the self-corrections: session ids read from the wrong field (0.3.0), titles silently nulled (0.3.1), benchmark numbers re-measured **down** when the harness was found to over-collect candidates (0.3.1), then **up** when the algorithm actually improved (0.4.0). No quietly rewritten history.
+- **Scope is stated, not implied.** Session localization is not end-to-end answer accuracy; the weak question types are named; the 2× backend-call cost of the 0.4.0 algorithm is disclosed up front.
+- **No strawman baselines.** You will never find a comparison row for a process this product does not run, or a third-party self-reported figure presented as a reference.
 
 ## Requirements
 
