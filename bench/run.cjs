@@ -54,6 +54,9 @@ function haystackSessions(entry) {
 function buildQuery(question) {
   const clean = String(question || "").replace(/"/g, " ");
   // Tokenized OR — question-style recall; each token a quoted term.
+  // Note: dropping stopwords was tested and regresses the benchmark
+  // (hit@1 86.6%→84.8%; single-session-assistant 100%→83.9%), so the
+  // tokenizer keeps every token.
   const tokens = [...new Set(clean.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))];
   return tokens.map((t) => '"' + t + '"').join(" OR ");
 }
