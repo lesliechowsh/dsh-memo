@@ -6,22 +6,7 @@
 [![license](https://img.shields.io/npm/l/dsh-memo)](../LICENSE)
 [![status](https://img.shields.io/badge/status-beta-8B7E5A)](../CHANGELOG.md)
 
-**你 agent 的记忆：它做过的每一件事，跨所有会话，零基础设施。**
-
-```yaml
-project:    dsh-memo
-domain:     agent memory / session retrieval
-audience:   DSH（DeepSeek Harness）用户：让 agent 记住历史
-interfaces: 三个模型工具 — memo_search / memo_remember / memo_stats
-runtime:    DSH host 插件（Node），无需额外服务、无向量数据库
-storage:    DSH 官方会话语料 + 一个纯 JSONL 笔记文件
-status:     beta — 0.x 线内无破坏性 API 变更；见 CHANGELOG
-support:    GitHub Issues
-```
-
-> **面向**想要让 agent 回答"三天前我们决定了什么？"的 DSH 用户——**Memo 是**一个零基础设施的记忆插件，**把 DSH 本来就记录的会话语料变成可搜索记忆**。与外部记忆框架不同，它不重建索引、不在你的机器之外存任何东西，直接跑在官方 `sessionQuery` 后端上。
-
-DeepSeek Harness 本身就在记录每个会话、每条消息、每次工具调用。Memo 把这套语料变成 agent 真正能用的可搜索记忆：问任何过去会话里的事，一次工具调用拿回证据。
+**你的 agent 记得住你们做过的每一件事——一条插件命令，别的什么都不用跑。**
 
 ## 快速示例
 
@@ -48,42 +33,13 @@ DeepSeek Harness 本身就在记录每个会话、每条消息、每次工具调
 
 > Agent：*"有——我们在 Weniger 主题项目里调研过：'DESIGN DIETER RAMS' 是注册商标，所以产品改名为 Weniger……"*
 
-## 为什么选 Memo
-
-- **零基础设施**——没有向量数据库、没有 embedding API、没有后台索引器。一行插件配置，仅此而已。
-- **官方语料即真相源**——Memo 不重建索引；它查询 DSH 自带的 `sessionQuery`（FTS5）服务。DSH 记录了什么，你就能召回什么。
-- **本地优先**——每个字节都留在你的机器上：会话留在 DSH 的存储里，笔记就是一个人类可读的 JSONL 文件。
-- **诚实的数字**——检索质量在 LongMemEval-S 上实测，评测脚本忠实复刻发布算法，好坏都如实公布（见 [Benchmark](#benchmark)）。没有挑好的基线。
-
-外部记忆框架（Mem0、Letta 等）会把你的数据嵌入并重存进它们管理的基础设施；Memo 以 DSH 自己的存储为唯一真相源，且不需要你运维任何东西。如果你需要 DSH 之外的跨应用记忆，那些工具更合适。
-
-## 维护者写在前面的话
-
-我做 Memo 的起因，是被那些跑分数字无法复现的记忆工具坑过太多次。所以这个项目只有一条规则，直说：**只发布产品实测的数字，并且把产生这些数字的完整过程一起公开。** 具体做法：
-
-- **评测脚本是真实管线的副本**——分页大小、排序、截断一一对应，不是"想法的重新实现"。同样的数据字节，跑出同样的数字；运行环境已记录。当年发现脚本过度收集了产品根本看不到的候选时，发布的数字是**下调**（0.3.1），不是上调。
-- **被否决的实验也公开。** 等权 bigram 变体把 hit@1 干到 5.2%；加宽每词分页不值 2 倍 API 调用；一篇我很尊重的论文里的时间感知扩展想法，确定性复现后实测**反而更差**——这个负结果连同精确数字一起留在实验日志里，因为负结果也是结果。
-- **我的错误记在 CHANGELOG 里，不是删掉。** 会话 id 读错字段（0.3.0）、标题被静默置空（0.3.1）、0.5.0 又修掉 review 发现的三个 bug——其中一个（停用词把内容词挤出查询窗口）让头条召回数字被低估了两个版本。修好、重测、写下来。
-- **限制在最疼的地方说清楚。** 会话定位不是端到端答题准确率。最弱的两类题型带着数字点名列出。"词长 ≈ 内容词"的加权假设依赖英文统计规律，**迁移到中文不成立**——下面明说，不藏。中文查询命中后端 unicode61 的限制，返回 `cjkWarning` 而不是沉默地漏。
-- **没有稻草人基线，没有借来的数字。** 你不会看到"本产品并不运行的过程"的比较行，也不会看到第三方自报数字充当参照行。
-
-如果你发现这里的数字复现不出来，那将是这个项目能收到的最高价值的 bug 报告——请[开 issue](https://github.com/lesliechowsh/dsh-memo/issues)。
-
-## 环境要求
-
-- **DeepSeek Harness**，composition 里有 `sessionQuery` 服务（标准 `web` profile 自带）。
-- 部署的会话查询索引必须是开启状态——若配置为 `openAt: "never"`，会话搜索被禁用，`memo_search` 会如实报错而不是瞎猜。
-- **中文 / CJK**：后端 unicode61 FTS5 索引把连续汉字串当作单个 token，中文会话只能靠整段原文命中检索。`memo_search` 对中文查询返回 `cjkWarning` 如实说明；索引侧修复属于上游（见 [`bench/`](../bench/README.md)）。
-- 笔记需要工具执行时能解析 `$DSH_HOME`（所有标准 DSH 部署都满足）。
-- 不需要其他服务、不需要 API key、没有任何网络调用。
-
 ## 安装
 
 ```sh
 dsh plugin --profile web add dsh-memo@latest
 ```
 
-重启 `dsh web`——agent 的工具列表里出现三个 `memo_*` 工具。
+重启 `dsh web`——agent 的工具列表里出现三个 `memo_*` 工具。整个安装就这些。
 
 <details>
 <summary>没有 <code>dsh plugin</code> 子命令的部署（手动安装）</summary>
@@ -102,6 +58,22 @@ dsh plugin --profile web add dsh-memo@latest
 </details>
 
 卸载：`dsh plugin --profile web remove dsh-memo`。
+
+## 你能得到什么
+
+- **每个历史会话都可搜索。** 用大白话问（"我们之前决定过……吗？"），一次工具调用拿回命中的会话、片段和证据。
+- **别的什么都不用跑。** 没有向量数据库、没有 embedding API、没有 API key、没有后台索引器——它直接搜索 DSH 已经记录的语料，走官方 `sessionQuery` 后端。
+- **一切都留在本地。** 会话留在 DSH 的存储里；你的蒸馏笔记就是一个人类可读的 JSONL 文件。
+
+Memo 刻意不把你的历史重建进自己的索引。如果你需要 DSH 之外、基于 embedding 的跨应用记忆，Mem0、Letta 这类项目就是为那个场景造的；Memo 坚持让 DSH 自己的语料成为唯一真相源。
+
+## 环境要求
+
+- **DeepSeek Harness**，composition 里有 `sessionQuery` 服务（标准 `web` profile 自带）。
+- 部署的会话查询索引必须是开启状态——若配置为 `openAt: "never"`，会话搜索被禁用，`memo_search` 会如实报错而不是瞎猜。
+- **中文 / CJK**：后端 unicode61 FTS5 索引把连续汉字串当作单个 token，中文会话只能靠整段原文命中检索。`memo_search` 对中文查询返回 `cjkWarning` 如实说明；索引侧修复属于上游（见 [`bench/`](../bench/README.md)）。
+- 笔记需要工具执行时能解析 `$DSH_HOME`（所有标准 DSH 部署都满足）。
+- 不需要其他服务、不需要 API key、没有任何网络调用。
 
 ## 工具
 
@@ -263,6 +235,18 @@ Memo 的定位落在 [《Memory for Large Language Models》](https://arxiv.org/
 - **已知天花板**：knowledge-update（hit@1 91.0%）靠问句与证据的词面重叠；助手复述类与偏好类（51.8% / 33.3%）是词法路线的地板——证据常与问句没有共同词，语义鸿沟不是分词或调权重能补的。
 - **英文特有假设**："词长 ≈ 内容词"的加权规律是英文的统计特征，迁移到中文不成立（且后端 unicode61 索引另有 CJK 限制——见[环境要求](#环境要求)）。
 
+## 维护者写在前面的话
+
+我做 Memo 的起因，是被那些跑分数字无法复现的记忆工具坑过太多次。所以这个项目只有一条规则，直说：**只发布产品实测的数字，并且把产生这些数字的完整过程一起公开。** 具体做法：
+
+- **评测脚本是真实管线的副本**——分页大小、排序、截断一一对应，不是"想法的重新实现"。同样的数据字节，跑出同样的数字；运行环境已记录。当年发现脚本过度收集了产品根本看不到的候选时，发布的数字是**下调**（0.3.1），不是上调。
+- **被否决的实验也公开。** 等权 bigram 变体把 hit@1 干到 5.2%；加宽每词分页不值 2 倍 API 调用；一篇我很尊重的论文里的时间感知扩展想法，确定性复现后实测**反而更差**——这个负结果连同精确数字一起留在实验日志里，因为负结果也是结果。
+- **我的错误记在 CHANGELOG 里，不是删掉。** 会话 id 读错字段（0.3.0）、标题被静默置空（0.3.1）、0.5.0 又修掉 review 发现的三个 bug——其中一个（停用词把内容词挤出查询窗口）让头条召回数字被低估了两个版本。修好、重测、写下来。
+- **限制在最疼的地方说清楚。** 会话定位不是端到端答题准确率。最弱的两类题型带着数字点名列出。"词长 ≈ 内容词"的加权假设依赖英文统计规律，**迁移到中文不成立**——下面明说，不藏。中文查询命中后端 unicode61 的限制，返回 `cjkWarning` 而不是沉默地漏。
+- **没有稻草人基线，没有借来的数字。** 你不会看到"本产品并不运行的过程"的比较行，也不会看到第三方自报数字充当参照行。
+
+如果你发现这里的数字复现不出来，那将是这个项目能收到的最高价值的 bug 报告——请[开 issue](https://github.com/lesliechowsh/dsh-memo/issues)。
+
 ## 路线图
 
 - [x] LoCoMo10 辅测
@@ -281,5 +265,18 @@ Memo 的定位落在 [《Memory for Large Language Models》](https://arxiv.org/
 - 安全报告：[SECURITY.md](../SECURITY.md)——Memo 从不把数据送出你的机器；它唯一的依赖是本地的 DSH 会话存储，无网络调用。
 
 ## 许可证
-
 MIT —— 见 `LICENSE`。
+
+
+## 给读这个文件的 agent
+
+```yaml
+project:    dsh-memo
+domain:     agent memory / session retrieval
+audience:   DSH（DeepSeek Harness）用户：让 agent 记住历史
+interfaces: 三个模型工具 — memo_search / memo_remember / memo_stats
+runtime:    DSH host 插件（Node），无需额外服务、无向量数据库
+storage:    DSH 官方会话语料 + 一个纯 JSONL 笔记文件
+status:     beta — 0.x 线内无破坏性 API 变更；见 CHANGELOG
+support:    GitHub Issues
+```

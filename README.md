@@ -6,22 +6,7 @@
 [![license](https://img.shields.io/npm/l/dsh-memo)](LICENSE)
 [![status](https://img.shields.io/badge/status-beta-8B7E5A)](CHANGELOG.md)
 
-**Your agent's memory of everything it ever did — across every session, with zero infrastructure.**
-
-```yaml
-project:    dsh-memo
-domain:     agent memory / session retrieval
-audience:   DSH (DeepSeek Harness) users who want their agent to remember
-interfaces: three model tools — memo_search / memo_remember / memo_stats
-runtime:    DSH host plugin (Node), no extra services, no vector DB
-storage:    the official DSH session corpus + one plain JSONL notes file
-status:     beta — no breaking API changes inside the 0.x line; see CHANGELOG
-support:    GitHub Issues
-```
-
-> **For** DSH users who need their agent to answer "what did we decide three days ago?" — **Memo is** a zero-infrastructure memory plugin that **turns the session corpus DSH already records into searchable memory**. Unlike external memory frameworks, it re-indexes nothing, stores nothing outside your machine, runs on the official `sessionQuery` backend — and publishes every benchmark number with the experiment trail that produced it.
-
-DeepSeek Harness already records every session, message, and tool call. Memo turns that corpus into searchable memory your agent can actually use: ask about anything from any past session, and get the evidence back in one tool call.
+**Your agent remembers everything you've done together — one plugin command, nothing else to run.**
 
 ## Quick example
 
@@ -48,42 +33,13 @@ DeepSeek Harness already records every session, message, and tool call. Memo tur
 
 > Agent: *"Yes — we researched it in the Weniger theme project: 'DESIGN DIETER RAMS' is a registered trademark, so the product was renamed Weniger…"*
 
-## Why Memo
-
-- **Zero infrastructure** — no vector database, no embedding API, no background indexer. One plugin row, that's it.
-- **The official corpus is the source of truth** — Memo re-indexes nothing; it queries DSH's own `sessionQuery` (FTS5) service. What DSH recorded is what you can recall.
-- **Local-first** — every byte stays on your machine: sessions stay in DSH's store, notes are one human-readable JSONL file.
-- **Honest numbers** — retrieval quality is measured on LongMemEval-S and LoCoMo10 with harnesses that reproduce the shipped algorithm, and published warts and all (see [Benchmark](#benchmark)). No cherry-picked baselines.
-
-External memory frameworks (Mem0, Letta, etc.) embed and re-store your data in infrastructure they manage; Memo keeps DSH's own store as the single source of truth and adds nothing to operate. If you need cross-app memory outside DSH, those tools are the better fit.
-
-## A note from the maintainer, before the claims
-
-I started Memo because I kept getting burned by memory tools whose benchmark numbers I couldn't reproduce. So this project runs on one rule, stated plainly: **publish only what the shipped product measures, and publish the trail that produced it.** What that means in practice:
-
-- **The benchmark harnesses are copies of the real pipeline** — page sizes, ranking, truncation — not a re-implementation of the idea. Same dataset bytes, same numbers; environment recorded. When I once caught the harness over-collecting candidates that the product could never see, the published numbers went *down* (0.3.1), not up.
-- **Rejected experiments are published too.** The equal-weight bigram variant collapsed hit@1 to 5.2%; the wider per-term page wasn't worth 2× the API calls; a deterministic re-implementation of a time-aware expansion idea from a paper I respect made temporal recall *worse* — and that one is in the log with the exact numbers, because negative results are results.
-- **My mistakes are in the CHANGELOG, not deleted.** Session ids read from the wrong field (0.3.0), titles silently nulled (0.3.1), and three bugs found by review in 0.5.0 — one of which, stopwords crowding content words out of the query window, meant the headline recall number was understated for two releases. Fixed, re-measured, and written down.
-- **Limitations are stated where they hurt.** Session localization is not end-to-end answer accuracy. The two weakest question types are named with their numbers. The length-as-rarity weighting rests on an English regularity — long word ≈ content word — and does **not** transfer to Chinese; declared below, not hidden. Chinese queries hit the backend's unicode61 CJK limitation and get a `cjkWarning` instead of silent misses.
-- **No strawman baselines, no borrowed numbers.** You will not find a comparison row for a process this product does not run, or a third-party self-reported figure presented as a reference.
-
-If you find a number here that doesn't reproduce, that is the highest-value bug report this project can receive — please [open an issue](https://github.com/lesliechowsh/dsh-memo/issues).
-
-## Requirements
-
-- **DeepSeek Harness** with the `sessionQuery` service in the composition (shipped in the standard `web` profile).
-- The deployment's session-query index must be open — if it is configured with `openAt: "never"`, session search is disabled and `memo_search` reports it honestly instead of guessing.
-- **Chinese / CJK**: the backend's unicode61 FTS5 index treats contiguous CJK runs as single tokens, so Chinese sessions are searchable only by exact verbatim runs. `memo_search` returns a `cjkWarning` for Chinese queries; the fix is index-side and belongs upstream (see [`bench/`](bench/README.md)).
-- Notes need `$DSH_HOME` resolvable at tool-execution time (standard on every DSH deployment).
-- No other services, no API keys, no network calls.
-
 ## Install
 
 ```sh
 dsh plugin --profile web add dsh-memo@latest
 ```
 
-Restart `dsh web` — the three `memo_*` tools appear in your agent's tool list.
+Restart `dsh web` — the three `memo_*` tools appear in your agent's tool list. That's the whole setup.
 
 <details>
 <summary>Deployments without the <code>dsh plugin</code> subcommand (manual)</summary>
@@ -102,6 +58,22 @@ Restart `dsh web` — the three `memo_*` tools appear in your agent's tool list.
 </details>
 
 Uninstall: `dsh plugin --profile web remove dsh-memo`.
+
+## What you get
+
+- **Every past session, searchable.** Ask in plain language ("did we ever decide…?") and get the matching session, snippet, and evidence back in one tool call.
+- **Nothing else to run.** No vector database, no embedding API, no API keys, no background indexer — it searches the corpus DSH already records, through the official `sessionQuery` backend.
+- **Everything stays local.** Sessions stay in DSH's store; your distilled notes are one human-readable JSONL file.
+
+Memo deliberately does not re-index your history into its own store. If you need cross-app memory outside DSH with embedding-based search, projects like Mem0 or Letta are built for that; Memo keeps DSH's own corpus as the single source of truth.
+
+## Requirements
+
+- **DeepSeek Harness** with the `sessionQuery` service in the composition (shipped in the standard `web` profile).
+- The deployment's session-query index must be open — if it is configured with `openAt: "never"`, session search is disabled and `memo_search` reports it honestly instead of guessing.
+- **Chinese / CJK**: the backend's unicode61 FTS5 index treats contiguous CJK runs as single tokens, so Chinese sessions are searchable only by exact verbatim runs. `memo_search` returns a `cjkWarning` for Chinese queries; the fix is index-side and belongs upstream (see [`bench/`](bench/README.md)).
+- Notes need `$DSH_HOME` resolvable at tool-execution time (standard on every DSH deployment).
+- No other services, no API keys, no network calls.
 
 ## Tools
 
@@ -272,6 +244,18 @@ Measured on three evaluations under the exact pipeline `memo_search` ships — p
 - **Known ceilings**: knowledge-update (hit@1 91.0%) works because question and evidence share words; assistant-quoted and preference questions (51.8% / 33.3%) are the lexical floor — their evidence often shares no words with the question, and no tokenizer or weight tuning closes a semantic gap.
 - **English-specific assumption**: the length-as-rarity weighting ("long word ≈ content word") is an English statistical regularity. It does not transfer to Chinese (and the backend's unicode61 index has its own CJK limitation — see [Requirements](#requirements)).
 
+## A note from the maintainer, before the claims
+
+I started Memo because I kept getting burned by memory tools whose benchmark numbers I couldn't reproduce. So this project runs on one rule, stated plainly: **publish only what the shipped product measures, and publish the trail that produced it.** What that means in practice:
+
+- **The benchmark harnesses are copies of the real pipeline** — page sizes, ranking, truncation — not a re-implementation of the idea. Same dataset bytes, same numbers; environment recorded. When I once caught the harness over-collecting candidates that the product could never see, the published numbers went *down* (0.3.1), not up.
+- **Rejected experiments are published too.** The equal-weight bigram variant collapsed hit@1 to 5.2%; the wider per-term page wasn't worth 2× the API calls; a deterministic re-implementation of a time-aware expansion idea from a paper I respect made temporal recall *worse* — and that one is in the log with the exact numbers, because negative results are results.
+- **My mistakes are in the CHANGELOG, not deleted.** Session ids read from the wrong field (0.3.0), titles silently nulled (0.3.1), and three bugs found by review in 0.5.0 — one of which, stopwords crowding content words out of the query window, meant the headline recall number was understated for two releases. Fixed, re-measured, and written down.
+- **Limitations are stated where they hurt.** Session localization is not end-to-end answer accuracy. The two weakest question types are named with their numbers. The length-as-rarity weighting rests on an English regularity — long word ≈ content word — and does **not** transfer to Chinese; declared below, not hidden. Chinese queries hit the backend's unicode61 CJK limitation and get a `cjkWarning` instead of silent misses.
+- **No strawman baselines, no borrowed numbers.** You will not find a comparison row for a process this product does not run, or a third-party self-reported figure presented as a reference.
+
+If you find a number here that doesn't reproduce, that is the highest-value bug report this project can receive — please [open an issue](https://github.com/lesliechowsh/dsh-memo/issues).
+
 ## Roadmap
 
 - [x] LoCoMo10 secondary benchmark
@@ -292,3 +276,16 @@ Measured on three evaluations under the exact pipeline `memo_search` ships — p
 ## License
 
 MIT — see `LICENSE`.
+
+## For agents reading this file
+
+```yaml
+project:    dsh-memo
+domain:     agent memory / session retrieval
+audience:   DSH (DeepSeek Harness) users who want their agent to remember
+interfaces: three model tools — memo_search / memo_remember / memo_stats
+runtime:    DSH host plugin (Node), no extra services, no vector DB
+storage:    the official DSH session corpus + one plain JSONL notes file
+status:     beta — no breaking API changes inside the 0.x line; see CHANGELOG
+support:    GitHub Issues
+```
