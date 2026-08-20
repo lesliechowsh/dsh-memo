@@ -4,6 +4,23 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.10.2 — 2026-08-21
+
+- **The bundle patch now mounts the plugin row** (`insert`, mirroring the
+  working dsh-weniger-theme bundle patch). 0.10.1 only overrode the
+  session-query config, so the package installed and the patch applied but
+  nothing loaded the plugin — it never appeared in the plugin inventory and
+  no `memo_*` tools registered. Caught by the maintainer's own real
+  deployment right after 0.10.1.
+
+## 0.10.1 — 2026-08-21
+
+- Declare `dsh.bundle.patch` in the manifest — 0.10.0 shipped
+  `cordis.patch.yml` but the profile loader ignores a bundle's patch unless
+  its manifest declares it (verified against dsh-app-boot's profile
+  composition contract and the upstream dsh-base/dsh-web-app manifests).
+  CONTRIBUTING gains the manual-install steps the README already pointed at.
+
 ## 0.10.0 — 2026-08-21
 
 - **Install now enables session search.** DSH ships full-text session

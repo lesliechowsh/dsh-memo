@@ -1,11 +1,17 @@
 # Applied automatically when dsh-memo is installed as a profile bundle
 # (`dsh plugin --profile <name> add dsh-memo@latest`).
 #
-# DSH ships full-text session search opt-in: the base composition mounts
-# session-query-sqlite with `openAt: never` (searchSessions/searchEvents
-# fail with SESSION_QUERY_SEARCH_DISABLED). Memo's core feature is
-# cross-session search, so installing Memo enables the platform's built-in
-# index on first use.
+# Two jobs:
+#
+# 1. Mount this package as a loader row so the profile actually runs the
+#    plugin (the memo_* tools register from index.js). Without this insert
+#    the package installs but nothing loads — 0.10.1 shipped that way and
+#    the plugin never appeared.
+# 2. Enable the platform's full-text session search. DSH ships it opt-in:
+#    the base composition mounts session-query-sqlite with `openAt: never`
+#    (searchSessions/searchEvents fail with SESSION_QUERY_SEARCH_DISABLED).
+#    Memo's core feature is cross-session search, so installing Memo turns
+#    the platform's built-in index on at first use.
 #
 # `openAt: first-search` keeps process startup clean — node:sqlite is
 # imported and the index is built on the first actual search. The index
@@ -15,6 +21,10 @@
 # path in your profile's `cordis.patch.yml` (see README). A deployment that
 # wants search off can re-disable it with `openAt: never` in a later patch
 # layer.
+- insert:
+    - id: memo
+      name: 'dsh-memo'
+
 - id: session-query-sqlite
   config:
     path: ':memory:'

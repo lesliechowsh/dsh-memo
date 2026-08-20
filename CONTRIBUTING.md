@@ -58,8 +58,9 @@ The bundle mechanism is what makes install turn search on. Two files matter:
 
 1. Edit `<DSH_HOME>/profiles/<name>/package.json` — add `dsh-memo` to
    `dependencies` and to the ordered `dsh.profile.bundles` list (the package
-   declares `dsh.bundle.patch`, which is what makes the profile loader apply
-   its `cordis.patch.yml`):
+   declares `dsh.bundle.patch`, which makes the profile loader apply its
+   `cordis.patch.yml` — that patch both mounts the plugin row and turns
+   session search on):
 
    ```json
    {
