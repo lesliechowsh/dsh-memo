@@ -26,6 +26,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/lesliechowsh/dsh-memo"
+    "url": "git+https://github.com/lesliechowsh/dsh-memo.git"
   }
 }
