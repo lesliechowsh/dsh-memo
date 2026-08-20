@@ -113,18 +113,18 @@ Writing (`memo_remember`) and reading (`memo_search`) follow the survey's memory
 
 ## Benchmark
 
-Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813) (500 questions, 54-session haystacks per question), session-level retrieval under the exact algorithm `memo_search` ships — phrase-first plus per-term matched-count merge — reproduced in the harness over the same FTS5 engine class the official backend uses. Full protocol and environment: [`bench/`](bench/README.md).
+Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813) (500 questions, 54-session haystacks per question), session-level retrieval under the exact pipeline `memo_search` ships — phrase-first plus per-term matched-count merge, with the official backend's page-size truncation and representative-event ranking — reproduced in the harness over the same FTS5 engine class the backend uses. Full protocol and environment: [`bench/`](bench/README.md).
 
-**Overall: hit@1 45.8% · hit@5 75.4% · hit@10 84.4% · MRR 0.582**
+**Overall: hit@1 36.4% · hit@5 68.4% · hit@10 80.0% · MRR 0.499**
 
 | Question type | n | hit@1 | hit@5 | MRR |
 |---|---|---|---|---|
-| multi-session | 133 | 48.9% | 87.2% | 0.641 |
-| temporal-reasoning | 133 | 39.1% | 72.9% | 0.540 |
-| knowledge-update | 78 | 80.8% | 93.6% | 0.872 |
-| single-session-user | 70 | 60.0% | 92.9% | 0.737 |
-| single-session-assistant | 56 | 3.6% | 16.1% | 0.082 |
-| single-session-preference | 30 | 16.7% | 56.7% | 0.321 |
+| multi-session | 133 | 38.3% | 76.7% | 0.551 |
+| temporal-reasoning | 133 | 33.8% | 69.9% | 0.486 |
+| knowledge-update | 78 | 55.1% | 89.7% | 0.701 |
+| single-session-user | 70 | 52.9% | 77.1% | 0.635 |
+| single-session-assistant | 56 | 1.8% | 17.9% | 0.073 |
+| single-session-preference | 30 | 16.7% | 43.3% | 0.279 |
 
 **Scope:** this measures session localization — whether the gold session appears in the top-k — not end-to-end answer accuracy, which is a separate roadmap item. The weak types (assistant-quoted answers, preferences) are the known frontier.
 

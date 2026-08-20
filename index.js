@@ -78,10 +78,11 @@ exports.apply = function (ctx) {
       const rows = await ctx.sessionQuery.readTitleSnapshots(ids.map(String));
       const titles = {};
       for (const row of rows || []) {
-        const value = row && typeof row === "object" ? (row.value ?? row) : null;
-        const id = value && (value.id ?? (value.header && value.header.id) ?? (value.session && value.session.id));
-        const title = value && (value.title ?? (value.titleSnapshot && value.titleSnapshot.title));
-        if (id !== undefined && id !== null) titles[String(id)] = typeof title === "string" ? title : null;
+        const obs = row && typeof row === "object" ? (row.value ?? row) : null;
+        const id = obs && (obs.id ?? (obs.header && obs.header.id) ?? (obs.session && obs.session.id));
+        const t = obs && obs.title;
+        const title = typeof t === "string" ? t : (t && typeof t === "object" && typeof t.title === "string" ? t.title : null);
+        if (id !== undefined && id !== null) titles[String(id)] = title;
       }
       for (const hit of hits) hit.title = titles[String(hit.sessionId)] ?? null;
     } catch (err) { /* titles optional */ }

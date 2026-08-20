@@ -113,18 +113,18 @@ Memo 的定位落在 [《Memory for Large Language Models》](https://arxiv.org/
 
 ## Benchmark
 
-在 [LongMemEval-S](https://arxiv.org/abs/2410.10813)（500 个问题，每题 54 个干扰会话）上实测，会话级检索，评测脚本忠实复刻 `memo_search` 内置算法（短语优先 + 逐词命中数合并），跑在与官方后端同类的 FTS5 引擎上。完整协议与环境：[`bench/`](bench/README.md)。
+在 [LongMemEval-S](https://arxiv.org/abs/2410.10813)（500 个问题，每题 54 个干扰会话）上实测，会话级检索，评测脚本忠实复刻 `memo_search` 内置管线（短语优先 + 逐词命中数合并，含官方后端的分页截断与代表事件排序），跑在与后端同类的 FTS5 引擎上。完整协议与环境：[`bench/`](bench/README.md)。
 
-**总成绩：hit@1 45.8% · hit@5 75.4% · hit@10 84.4% · MRR 0.582**
+**总成绩：hit@1 36.4% · hit@5 68.4% · hit@10 80.0% · MRR 0.499**
 
 | 题型 | n | hit@1 | hit@5 | MRR |
 |---|---|---|---|---|
-| multi-session | 133 | 48.9% | 87.2% | 0.641 |
-| temporal-reasoning | 133 | 39.1% | 72.9% | 0.540 |
-| knowledge-update | 78 | 80.8% | 93.6% | 0.872 |
-| single-session-user | 70 | 60.0% | 92.9% | 0.737 |
-| single-session-assistant | 56 | 3.6% | 16.1% | 0.082 |
-| single-session-preference | 30 | 16.7% | 56.7% | 0.321 |
+| multi-session | 133 | 38.3% | 76.7% | 0.551 |
+| temporal-reasoning | 133 | 33.8% | 69.9% | 0.486 |
+| knowledge-update | 78 | 55.1% | 89.7% | 0.701 |
+| single-session-user | 70 | 52.9% | 77.1% | 0.635 |
+| single-session-assistant | 56 | 1.8% | 17.9% | 0.073 |
+| single-session-preference | 30 | 16.7% | 43.3% | 0.279 |
 
 **口径说明：** 本评测测量"会话定位"——金标会话是否进入 top-k——而非端到端答题准确率（后者是路线图单列项）。弱项题型（助手复述类、偏好类）是已知前沿。
 
