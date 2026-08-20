@@ -15,7 +15,7 @@ audience:   DSH（DeepSeek Harness）用户：让 agent 记住历史
 interfaces: 三个模型工具 — memo_search / memo_remember / memo_stats
 runtime:    DSH host 插件（Node），无需额外服务、无向量数据库
 storage:    DSH 官方会话语料 + 一个纯 JSONL 笔记文件
-status:     beta — 0.3 起 API 稳定，有实测 benchmark，见 CHANGELOG
+status:     beta — 0.x 线内无破坏性 API 变更；见 CHANGELOG
 support:    GitHub Issues
 ```
 
@@ -92,11 +92,64 @@ dsh plugin --profile web add dsh-memo@latest
 
 ## 工具
 
-| 工具 | 作用 |
-|---|---|
-| `memo_search(query, limit?, sessionId?, since?, tags?)` | 搜索所有历史会话 + 备忘笔记——片段、标题、时间过滤、标签过滤 |
-| `memo_remember(text, tags?)` | 写一条持久笔记：跨会话存续的事实、决定、偏好；完全重复的文本不再重复写入 |
-| `memo_stats()` | 语料总览：会话数、最近标题、笔记条数 |
+### `memo_search`
+
+搜索工作区里所有历史会话 + 备忘笔记。
+
+| 参数 | 类型 | 默认 | 含义 |
+|---|---|---|---|
+| `query` | string | 必填 | 搜索词；匹配会话文本与备忘笔记。 |
+| `limit` | number | 10（上限 50） | 每个来源的最大命中数。 |
+| `sessionId` | string | — | 限定在单个会话内搜索（搜索其事件）。 |
+| `since` | number | — | 只返回该 epoch-ms 时间之后的命中。 |
+| `tags` | string | — | 逗号分隔标签；笔记须至少带其中一个才会返回。 |
+
+返回：
+
+```json
+{
+  "sessions": [
+    {
+      "sessionId": "session-49924467-…",
+      "title": "Weniger theme design",   // 会话没有标题快照时为 null
+      "snippet": "…匹配文本…",
+      "time": 1787078839061,              // 命中事件的 epoch 毫秒
+      "source": "event",
+      "mode": "phrase"                    // "phrase" = 原句命中；"terms" = 加权词/词对命中
+    }
+  ],
+  "notes": [
+    { "time": 1787212144789, "text": "…", "tags": ["release"] }
+  ],
+  "limit": 10
+}
+```
+
+- `sessions` 排序：短语命中优先，再按加权词/词对得分；`notes` 为最近的匹配，新的在后。
+- 当部署的会话查询索引关闭或服务缺失时，结果携带 `error` 字符串，而不是捏造命中。
+
+### `memo_remember`
+
+写一条持久笔记——跨会话存续的事实、决定、偏好，会出现在 `memo_search` 的结果里。
+
+| 参数 | 类型 | 默认 | 含义 |
+|---|---|---|---|
+| `text` | string | 必填 | 笔记内容——一条具体的事实、决定或偏好。 |
+| `tags` | string | — | 逗号分隔标签。 |
+
+返回 `{ ok, note, path }`；若已存在相同文本的笔记，则不追加，返回 `{ ok: true, duplicate: true, note }`（含已有笔记）。笔记以每行一条 JSON 记录的形式存在 `$DSH_HOME/memo/notes.jsonl`。
+
+### `memo_stats`
+
+语料总览——无参数。
+
+```json
+{
+  "sessions": 19,
+  "recent": [{ "id": "session-…", "cwd": "…", "createdAt": 1787…, "title": "…" }],
+  "notes": 4
+}
+```
 
 ## 工作原理
 

@@ -1,7 +1,7 @@
 // Memo (dsh-memo) — host-side dynamic plugin, canonical development form.
 // Deployed in this process as plugin `memo-7`.
 // Registers three model tools on the official sessionQuery service:
-//   memo_search   — cross-session recall (phrase-first + per-term count merge)
+//   memo_search   — cross-session recall (phrase-first + weighted token/pair merge)
 //   memo_remember — distilled durable notes (facts, decisions, preferences)
 //   memo_stats    — corpus overview
 //

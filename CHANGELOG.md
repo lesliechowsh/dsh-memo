@@ -4,6 +4,14 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.4.1 — 2026-08-20
+
+- Docs: Tools section expanded into a per-tool reference (parameter tables,
+  return shapes, ordering and error semantics for `memo_search`, duplicate
+  semantics for `memo_remember`, `memo_stats` output); README status line is
+  now a policy ("no breaking API changes inside the 0.x line") instead of a
+  version fact that drifts between releases.
+
 ## 0.4.0 — 2026-08-20
 
 - **Recall algorithm** — `memo_search` now searches each question token plus

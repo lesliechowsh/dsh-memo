@@ -15,7 +15,7 @@ audience:   DSH (DeepSeek Harness) users who want their agent to remember
 interfaces: three model tools — memo_search / memo_remember / memo_stats
 runtime:    DSH host plugin (Node), no extra services, no vector DB
 storage:    the official DSH session corpus + one plain JSONL notes file
-status:     beta — API stable since 0.3, benchmarked, see CHANGELOG
+status:     beta — no breaking API changes inside the 0.x line; see CHANGELOG
 support:    GitHub Issues
 ```
 
@@ -92,11 +92,71 @@ Uninstall: `dsh plugin --profile web remove dsh-memo`.
 
 ## Tools
 
-| Tool | What it does |
-|---|---|
-| `memo_search(query, limit?, sessionId?, since?, tags?)` | Search every past session plus your memo notes — snippets, titles, time filtering, tag filtering |
-| `memo_remember(text, tags?)` | Write one durable note: facts, decisions, preferences that survive across sessions; skips exact-duplicate text |
-| `memo_stats()` | Corpus overview: session count, recent titles, note count |
+### `memo_search`
+
+Search every past session in the workspace plus your memo notes.
+
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `query` | string | required | Search terms; matched against session text and memo notes. |
+| `limit` | number | 10 (cap 50) | Max hits per source. |
+| `sessionId` | string | — | Limit the search to one session (searches its events). |
+| `since` | number | — | Only hits after this epoch-ms time. |
+| `tags` | string | — | Comma-separated tags; a note must carry at least one to be returned. |
+
+Returns:
+
+```json
+{
+  "sessions": [
+    {
+      "sessionId": "session-49924467-…",
+      "title": "Weniger theme design",   // null when the session has no title snapshot
+      "snippet": "…matching text…",
+      "time": 1787078839061,              // epoch ms of the matching event
+      "source": "event",
+      "mode": "phrase"                    // "phrase" = verbatim question hit, "terms" = weighted token/pair hit
+    }
+  ],
+  "notes": [
+    { "time": 1787212144789, "text": "…", "tags": ["release"] }
+  ],
+  "limit": 10
+}
+```
+
+- `sessions` are ordered phrase-first, then by weighted token/pair score;
+  `notes` are the most recent matches, newest last.
+- When the deployment's session-query index is closed or the service is
+  missing, the result carries an `error` string instead of fabricated hits.
+
+### `memo_remember`
+
+Write one durable note — facts, decisions, preferences that survive across
+sessions and appear in `memo_search` results.
+
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `text` | string | required | The note — one concrete fact, decision, or preference. |
+| `tags` | string | — | Comma-separated tags. |
+
+Returns `{ ok, note, path }`; if a note with identical text already exists,
+nothing is appended and the result is `{ ok: true, duplicate: true, note }`
+with the existing note. Notes are one JSONL record per line at
+`$DSH_HOME/memo/notes.jsonl`.
+
+### `memo_stats`
+
+Corpus overview — no parameters.
+
+```json
+{
+  "sessions": 19,
+  "recent": [{ "id": "session-…", "cwd": "…", "createdAt": 1787…, "title": "…" }],
+  "notes": 4
+}
+```
+
 
 ## How it works
 
