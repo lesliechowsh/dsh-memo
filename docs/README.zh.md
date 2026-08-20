@@ -113,6 +113,10 @@ Memo 不重建索引：DSH 的 `sessionQuery` 服务是唯一真相源。每次�
 
 答案依赖历史时 agent 会自己调用 `memo_search`（"我们有没有讨论过基于 SSH 的编码 agent？"）。知道大概范围时加过滤：`memo_search(query: "benchmark", since: 1787000000000)`。用 `memo_remember(text: …, tags: "naming,convention")` 写蒸馏事实，之后用 `memo_search(query: "naming", tags: "convention")` 找回。每个会话命中带一条 `snippet`（最佳匹配事件）；前 3 个命中还各带 `events`（最多 3 条匹配事件），agent 读到的是实际上下文，而不是一行匹配。
 
+### 后端慢的时候怎么办
+
+健康部署上完整管线照跑：短语步、带 df-proxy IDF 的加权步、多样本证据。DSH 的 session-query 后端每次调用都会对全部活跃语料做对账——平时很快，但慢机器上单次调用可能要几十秒。Memo 对此有防御：第一次后端调用超过 4 秒时，跳过加权步和证据（只返回短语结果），随后几分钟内的搜索直接跳过会话侧。这类结果都会带一个 `degraded` 字段说明发生了什么，笔记搜索不受影响。这是防御性降级，不是 benchmark 改动——公布的数字全部在完整管线上测得。
+
 ## 设计与研究基础
 
 Memo 落在 [《Memory for Large Language Models》](https://arxiv.org/abs/2607.25380)（清华 THUNLP 唐杰教授团队 / NUS）的记忆分类法上：**显式**表征（可独立寻址的 JSONL）、**在线**更新（DSH 实时追加）、**长期**持久化。

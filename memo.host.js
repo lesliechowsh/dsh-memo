@@ -122,6 +122,21 @@ return {
       return textOk
     }
 
+    // 0.11.0: adaptive latency guard. The session-query backend runs a full
+    // live-corpus reconcile on EVERY search call (observed 35-47s per call on
+    // a phone-class device, independent of the query), so a 27-call search can
+    // freeze the host for minutes. Guard: time the first (phrase) call; if it
+    // is slow, cache a "slow backend" verdict for SLOW_TTL_MS, return the
+    // phrase results only, and skip session search entirely on repeat calls
+    // inside the window. Every backend call also runs against a total time
+    // budget. On a healthy backend the full pipeline runs unchanged
+    // (benchmark parity); degradation is disclosed in the result.
+    const SLOW_MS = 4000
+    const BUDGET_MS = 10000
+    const SLOW_TTL_MS = 5 * 60 * 1000
+    let slowUntil = 0
+    let searchT0 = 0
+
     const textOutput = () => ({
       schema: { type: 'object', additionalProperties: true },
       render(args, value) {
@@ -167,7 +182,7 @@ return {
       })
     }
 
-    async function tokenizedSearch(query, limit, since) {
+    async function tokenizedSearch(query, limit, since, guard) {
       const tokens = tokenize(query)
       if (tokens.length <= 1) return []
       // 0.8.0: df-proxy IDF weights. One extra capped call per term (limit 50,
@@ -202,6 +217,7 @@ return {
       }
       const collected = new Map()
       for (const [phrase, lenWeight] of phrases) {
+        if (guard !== undefined && !guard.tick()) { guard.skipped += 1; break }
         const pts = phrase.split(' ')
         const isPair = pts.length === 2
         await ensureIdf()
@@ -251,8 +267,21 @@ return {
         const sessionId = typeof args.sessionId === 'string' && args.sessionId !== '' ? args.sessionId : undefined
         const result = { sessions: [], notes: [], limit }
         if (sessionQuery !== undefined) {
+          searchT0 = Date.now()
+          if (Date.now() < slowUntil) {
+            // Recent measurement already marked this deployment's backend slow;
+            // skip the session side entirely instead of freezing the host again.
+            result.degraded = {
+              reason: 'session search skipped: this deployment\'s session-query backend was measured slow on a recent call (per-call corpus reconcile); it re-enables automatically',
+              slowUntil,
+            }
+          } else {
           try {
+            const t0 = Date.now()
             const phrase = await phraseSearch(args.query, limit, sessionId, since)
+            const phraseMs = Date.now() - t0
+            const slow = phraseMs > SLOW_MS
+            if (slow) slowUntil = Date.now() + SLOW_TTL_MS
             const merged = []
             const seen = new Set()
             for (const hit of phrase) {
@@ -260,8 +289,9 @@ return {
               seen.add(String(hit.sessionId))
               merged.push(hit)
             }
-            if (sessionId === undefined) {
-              for (const hit of await tokenizedSearch(args.query, limit, since)) {
+            const guard = { tick: () => Date.now() - searchT0 < BUDGET_MS, skipped: 0 }
+            if (sessionId === undefined && !slow) {
+              for (const hit of await tokenizedSearch(args.query, limit, since, guard)) {
                 if (!seen.has(String(hit.sessionId))) {
                   seen.add(String(hit.sessionId))
                   merged.push(hit)
@@ -277,9 +307,11 @@ return {
             // so all published benchmark numbers stay valid. Cost: +3
             // backend calls (one per top session), skipped for sessionId-
             // scoped searches where the events are already the result rows.
-            if (sessionId === undefined && result.sessions.length > 0) {
+            // 0.11.0: each call also checks the time budget.
+            if (sessionId === undefined && !slow && guard.tick() && result.sessions.length > 0) {
               const targets = result.sessions.slice(0, 3)
               const settled = await Promise.allSettled(targets.map(async (hit) => {
+                if (!guard.tick()) return []
                 const page = await sessionQuery.searchEvents({
                   sessionId: String(hit.sessionId),
                   query: String(args.query),
@@ -290,8 +322,18 @@ return {
               }))
               settled.forEach((p, i) => { if (p.status === 'fulfilled') targets[i].events = p.value })
             }
+            if (slow || guard.skipped > 0) {
+              result.degraded = {
+                reason: slow
+                  ? 'slow backend: the first backend call took ' + phraseMs + 'ms (per-call corpus reconcile); weighted step and evidence skipped, phrase results only; further session searches are skipped for a few minutes'
+                  : 'backend time budget exhausted; weighted step truncated',
+                phraseMs: slow ? phraseMs : undefined,
+                skippedWeighted: guard.skipped > 0 ? guard.skipped : undefined,
+              }
+            }
           } catch (err) {
             result.error = 'search failed: ' + String((err && err.message) || err)
+          }
           }
         } else {
           result.error = 'sessionQuery service unavailable in this composition'

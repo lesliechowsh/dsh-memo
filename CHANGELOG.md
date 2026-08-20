@@ -4,6 +4,23 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.11.0 — 2026-08-21
+
+- **Adaptive latency guard.** Measured on a real deployment with a timing
+  probe: DSH's session-query backend reconciles its entire live corpus on
+  EVERY `searchSessions`/`searchEvents` call — 35-47 s per call on a
+  phone-class device, independent of the query — so the 27-call pipeline
+  froze the host for minutes (two overlapping calls were observed at ~5 min,
+  104% CPU). The guard times the first (phrase) call: over 4 s, the weighted
+  step and evidence are skipped (phrase results only) and the next 5 minutes
+  of searches skip the session side entirely; every backend call also runs
+  against a 10 s total budget. Every degraded result carries a `degraded`
+  field. Notes search is unaffected. On healthy backends the full pipeline
+  runs unchanged — benchmark numbers stay valid. This is a defensive floor,
+  not a fix: the constant per-call cost is upstream's (reconcile-per-call
+  with no throttle and no count fast path); plugin-side call pruning cannot
+  remove it. Root cause and measurements recorded in AGENTS.md.
+
 ## 0.10.2 — 2026-08-21
 
 - **The bundle patch now mounts the plugin row** (`insert`, mirroring the

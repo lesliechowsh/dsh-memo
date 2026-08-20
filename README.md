@@ -115,6 +115,10 @@ setup beyond the install, no external service involved.
 
 The agent reaches for `memo_search` by itself when the answer depends on history ("Did we ever discuss SSH-based coding agents?"). Filter when you know the neighborhood: `memo_search(query: "benchmark", since: 1787000000000)`. Write distilled facts with `memo_remember(text: …, tags: "naming,convention")`, find them later with `memo_search(query: "naming", tags: "convention")`. Every session hit carries a `snippet` (the best-matching event); the top 3 hits also carry `events` — up to 3 matching events each — so the agent can read the actual passage instead of a one-line match.
 
+### When the backend is slow
+
+On a healthy deployment the full pipeline runs: phrase step, weighted step with df-proxy IDF, and multi-snippet evidence. DSH's session-query backend reconciles its whole live corpus on every call — normally fast, but on a slow machine a single call can take tens of seconds. Memo guards against that: if the first backend call exceeds 4 seconds, the weighted step and evidence are skipped (phrase results only) and the next few minutes of searches skip the session side entirely. Every such result carries a `degraded` field explaining what happened, and notes search is unaffected. This is defensive degradation, not a benchmark change — the published numbers are measured on the full pipeline.
+
 ## Design & research grounding
 
 Memo maps onto the memory taxonomy of [Memory for Large Language Models](https://arxiv.org/abs/2607.25380) (Zhoubian, Zhang, Kharlamov & Tang — THUNLP · Tsinghua / NUS): **explicit** representation (independently addressable JSONL), **online** updates (DSH appends as it happens), **long-term** persistence.

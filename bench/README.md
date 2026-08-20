@@ -310,3 +310,13 @@ for the top-3 hit sessions) instead of 8 — roughly 3× the backend calls of
 falls back to length weights. The 3 evidence calls (0.9.0) run strictly
 after ranking and only add per-hit `events` — ranking is untouched, so all
 numbers in this file remain valid for 0.9.0.
+
+Latency blind spot (0.11.0, do not regress): these harnesses use an instant
+in-process backend, so they measure recall but NEVER latency. A real
+deployment measurement found DSH's session-query backend reconciles its
+entire live corpus on every call (35-47 s/call on a phone-class device,
+query-independent) — the shipped 27-call pipeline froze the host for
+minutes. The shipped plugin now degrades defensively under a slow backend
+(0.11.0); the ranking path these numbers measure is the full pipeline and
+runs unchanged on healthy backends. The real-deployment smoke test must
+include a latency check from now on.
