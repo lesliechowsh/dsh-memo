@@ -194,6 +194,28 @@ Measured consequences:
 - Upstream tracking: `deepseek-ai/deepseek-harness` has issues disabled;
   the limitation is documented here until an upstream channel accepts it.
 
+## Experiment log: final ceiling sweep (exp4) — falsifier outcome
+
+`exp4.cjs` (S) / `exp4-m.cjs` (M segments) swept the last lexical axes:
+STOP-list ablation, phrase-order loosening, and IDF weighting.
+
+- STOP: A2 (+15 stopwords: ever/whether/discuss/last/week/have/has/had/will/
+  your/my/me/our/their/some) moved S hit@1 74.8% → 75.6% (assistant-quoted
+  51.8% → 60.7%). **Not shipped** — the premise (long questions crowded by
+  query-head stopwords) does not transfer to the short queries agents
+  actually issue, and benchmark gains are not the target anymore.
+- Phrase-order loosening: a complete no-op on S (verbatim whole-question
+  hits are too rare to occupy the phrase slot). Not shipped.
+- IDF weighting (corpus-estimated document frequency): S hit@1 +4.4pp with
+  the capped-50 proxy equal to oracle — but the M direction check was
+  INCONSISTENT (3×50-question segments, proxy vs base hit@1: +34 / 0 / −4).
+  **Not shipped.** The falsifier worked: S-scale gains failed the M
+  direction-consistency test, exactly what the M harness exists for.
+
+These experiments are kept as reproducible evidence; no variant shipped.
+The benchmark epistemology (falsifier vs compass) is documented in the
+project's AGENTS.md.
+
 ## Chinese functional regression (NOT a benchmark)
 
 No public Chinese multi-session memory-retrieval corpus exists (checked:

@@ -33,7 +33,7 @@ exports.apply = function (ctx) {
     // index-side change — exact runs only, which is still strictly more
     // than the old behavior (CJK queries produced zero tokens).
     const cjk = [];
-    for (const m of src.matchAll(/[\u3400-\u9fff]+/g)) {
+    for (const m of src.matchAll(/\p{Script=Han}+/gu)) {
       const run = m[0];
       if (run.length >= 2 && !cjk.includes(run)) cjk.push(run);
     }
@@ -95,6 +95,8 @@ exports.apply = function (ctx) {
     return run;
   }
 
+  // O(n) over the notes file per write — fine at current scale; a
+  // size/mtime-invalidated index is the fix if notes ever grow large.
   async function findDuplicate(path, text) {
     const needle = String(text || "").trim().toLowerCase();
     if (needle === "") return null;

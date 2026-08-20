@@ -4,6 +4,18 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.7.1 — 2026-08-20
+
+- CJK detection unified: the tokenizer now uses `\p{Script=Han}` (same as
+  the cjkWarning check); previously it scanned `\u3400-\u9fff` (starts in
+  Ext-A) — the two disagreed on rare characters.
+- `findDuplicate` documented as O(n) per write (fine at current scale;
+  a size/mtime-invalidated index is the future fix).
+- `bench/exp4.cjs` / `exp4-m.cjs` published: the final lexical ceiling sweep
+  (STOP ablation, phrase-order loosening, IDF weighting) with the honest
+  conclusion — S-scale gains failed the M direction-consistency check, so
+  nothing shipped. Falsifier outcome recorded in bench/README.
+
 ## 0.7.0 — 2026-08-20
 
 - **Chinese query support** — the tokenizer now extracts contiguous Han runs
