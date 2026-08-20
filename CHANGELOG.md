@@ -4,6 +4,21 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.9.0 — 2026-08-21
+
+- **Multi-snippet evidence** — the top-3 hit sessions now each carry up to 3
+  matching events (`sessions[i].events`, via `searchEvents`), so the agent
+  reads the actual passage instead of one bestMatch line. Pure post-ranking
+  enrichment: the ranking path is byte-identical to 0.8.0, so every
+  published benchmark number stays valid without a re-run (noted in
+  bench/README). Cost: +3 backend calls per search (23 → 26), disclosed in
+  both READMEs. Skipped for `sessionId`-scoped searches, where the result
+  rows already are events.
+- `docs/landscape.md` published — a dated research snapshot of how Mem0 /
+  Zep / LangMem / Letta present themselves (install friction, benchmark
+  provenance, honesty of disclosure), with sources; explicitly labeled not a
+  benchmark.
+
 ## 0.8.0 — 2026-08-20
 
 - **df-proxy IDF weighting** — the first variant in the whole series to pass

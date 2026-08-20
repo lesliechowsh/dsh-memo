@@ -303,8 +303,10 @@ Conclusion recorded here for honesty: deterministic time-aware expansion does
 not pay on top of the 0.5.0 baseline; the paper's gains require index-side
 date indexing and a temporal model, both outside Memo's architecture.
 
-Cost note: the shipped variant issues up to 23 backend queries per
-`memo_search` (8 token-df estimates + 8 tokens + 7 pairs) instead of 8 —
-roughly 3× the backend calls of 0.3.x, for the 0.8.0 weighting. The df
-estimates use capped-50 counts; if they fail, the pipeline falls back to
-length weights.
+Cost note: the shipped variant issues up to 26 backend queries per
+`memo_search` (8 token-df estimates + 8 tokens + 7 pairs + 3 evidence calls
+for the top-3 hit sessions) instead of 8 — roughly 3× the backend calls of
+0.3.x. The df estimates use capped-50 counts; if they fail, the pipeline
+falls back to length weights. The 3 evidence calls (0.9.0) run strictly
+after ranking and only add per-hit `events` — ranking is untouched, so all
+numbers in this file remain valid for 0.9.0.

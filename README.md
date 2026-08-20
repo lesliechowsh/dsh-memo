@@ -81,7 +81,7 @@ Corpus overview, no parameters: `{ sessions: 19, recent: […], notes: 4 }`.
         DSH session corpus (live + persisted events)   + notes.jsonl
 ```
 
-Memo re-indexes nothing: DSH's `sessionQuery` service is the single source of truth. A search costs up to 23 backend calls (8 extra for the df estimates).
+Memo re-indexes nothing: DSH's `sessionQuery` service is the single source of truth. A search costs up to 26 backend calls (8 extra for the df estimates, 3 for the multi-snippet evidence below).
 
 ## Usage
 
@@ -99,7 +99,7 @@ setup beyond the install, no external service involved.
 
 ### Day-to-day
 
-The agent reaches for `memo_search` by itself when the answer depends on history ("Did we ever discuss SSH-based coding agents?"). Filter when you know the neighborhood: `memo_search(query: "benchmark", since: 1787000000000)`. Write distilled facts with `memo_remember(text: …, tags: "naming,convention")`, find them later with `memo_search(query: "naming", tags: "convention")`.
+The agent reaches for `memo_search` by itself when the answer depends on history ("Did we ever discuss SSH-based coding agents?"). Filter when you know the neighborhood: `memo_search(query: "benchmark", since: 1787000000000)`. Write distilled facts with `memo_remember(text: …, tags: "naming,convention")`, find them later with `memo_search(query: "naming", tags: "convention")`. Every session hit carries a `snippet` (the best-matching event); the top 3 hits also carry `events` — up to 3 matching events each — so the agent can read the actual passage instead of a one-line match.
 
 ## Design & research grounding
 

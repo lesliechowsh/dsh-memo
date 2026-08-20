@@ -268,6 +268,26 @@ exports.apply = function (ctx) {
         }
         result.sessions = merged.slice(0, limit);
         await enrichTitles(result.sessions);
+        // 0.9.0: multi-snippet evidence. The top-3 hit sessions each get up
+        // to 3 matching events via searchEvents, so the agent can read the
+        // actual passage instead of one bestMatch line. Pure post-ranking
+        // enrichment — the ranking path above is untouched, so all published
+        // benchmark numbers stay valid. Cost: +3 backend calls (one per top
+        // session), skipped for sessionId-scoped searches where the events
+        // are already the result rows.
+        if (sessionId === undefined && result.sessions.length > 0) {
+          const targets = result.sessions.slice(0, 3);
+          const settled = await Promise.allSettled(targets.map(async (hit) => {
+            const page = await ctx.sessionQuery.searchEvents({
+              sessionId: String(hit.sessionId),
+              query: String(args.query),
+              limit: 3,
+              ...(since !== undefined ? { filters: [{ kind: "time", from: since }] } : {}),
+            });
+            return (page.items || []).map((e) => ({ snippet: e.snippet ?? "", time: e.time ?? null, seq: e.seq ?? null }));
+          }));
+          settled.forEach((p, i) => { if (p.status === "fulfilled") targets[i].events = p.value; });
+        }
       } catch (err) {
         result.error = "search failed: " + String((err && err.message) || err);
       }

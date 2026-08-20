@@ -81,7 +81,7 @@ Memo 刻意不把你的历史重建进自己的索引。如果你需要 DSH 之�
         DSH 会话语料（live + persisted 事件）   + notes.jsonl
 ```
 
-Memo 不重建索引：DSH 的 `sessionQuery` 服务是唯一真相源。每次搜索最多 23 次后端调用（其中 8 次用于 df 估计）。
+Memo 不重建索引：DSH 的 `sessionQuery` 服务是唯一真相源。每次搜索最多 26 次后端调用（其中 8 次用于 df 估计，3 次用于下文的多样本片段）。
 
 ## 用法
 
@@ -97,7 +97,7 @@ Memo 不重建索引：DSH 的 `sessionQuery` 服务是唯一真相源。每次�
 
 ### 日常使用
 
-答案依赖历史时 agent 会自己调用 `memo_search`（"我们有没有讨论过基于 SSH 的编码 agent？"）。知道大概范围时加过滤：`memo_search(query: "benchmark", since: 1787000000000)`。用 `memo_remember(text: …, tags: "naming,convention")` 写蒸馏事实，之后用 `memo_search(query: "naming", tags: "convention")` 找回。
+答案依赖历史时 agent 会自己调用 `memo_search`（"我们有没有讨论过基于 SSH 的编码 agent？"）。知道大概范围时加过滤：`memo_search(query: "benchmark", since: 1787000000000)`。用 `memo_remember(text: …, tags: "naming,convention")` 写蒸馏事实，之后用 `memo_search(query: "naming", tags: "convention")` 找回。每个会话命中带一条 `snippet`（最佳匹配事件）；前 3 个命中还各带 `events`（最多 3 条匹配事件），agent 读到的是实际上下文，而不是一行匹配。
 
 ## 设计与研究基础
 
