@@ -51,3 +51,35 @@ the product's own measured numbers.
   temporary `--userconfig` npmrc holding a 2FA-bypass automation token, and
   delete it afterwards.
 - Tag the version commit and create a GitHub release whose notes link npm.
+
+## Manual install (no CLI / no plugin UI)
+
+The bundle mechanism is what makes install turn search on. Two files matter:
+
+1. Edit `<DSH_HOME>/profiles/<name>/package.json` — add `dsh-memo` to
+   `dependencies` and to the ordered `dsh.profile.bundles` list (the package
+   declares `dsh.bundle.patch`, which is what makes the profile loader apply
+   its `cordis.patch.yml`):
+
+   ```json
+   {
+     "name": "dsh-profile-web",
+     "private": true,
+     "dependencies": { "dsh-memo": "^0.10.1" },
+     "dsh": { "profile": { "bundles": ["…existing bundles…", "dsh-memo"] } }
+   }
+   ```
+
+2. Install the dependency into the profile (the profile is a pnpm workspace):
+
+   ```sh
+   cd <DSH_HOME>/profiles/<name> && pnpm install
+   ```
+
+3. Restart `dsh --profile <name>`.
+
+Bundle order matters: layers apply in `bundles` order, then the profile's own
+`cordis.patch.yml`. Memo's patch must come after the platform bundles (base /
+web-app) so its `openAt` override wins; appending it last does that. A
+deployment that wants search off overrides `openAt: never` again in the
+profile's own `cordis.patch.yml`, which applies last.
