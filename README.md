@@ -40,6 +40,18 @@ Manual profile install (deployments without the `dsh plugin` subcommand):
 
 `memo_remember` appends to `$DSH_HOME/memo/notes.jsonl` — plain JSONL you can edit, back up, or delete freely.
 
+## Design & research grounding
+
+Memo's architecture maps directly onto the memory taxonomy of [A Survey on the Memory Mechanism of Large Language Model based Agents](https://arxiv.org/abs/2404.13501) (Zhang et al., THUNLP · Tsinghua):
+
+| Survey dimension | Memo |
+|---|---|
+| Memory sources | Agent-generated: DSH logs every message, tool call, and result as it happens |
+| Memory form | External memory — plain JSONL logs and notes; no vector database, no weight training |
+| Memory writing | Automatic (the session log is the write path) plus manual distillation via `memo_remember` |
+| Memory reading | Retrieval-based read-out: full-text search with snippets, titles, and time filters (`memo_search`) |
+| Memory management | Raw full memory in v1; summarization, compression, and forgetting are on the roadmap |
+
 ## Benchmark targets
 
 LongMemEval-S (retrieval hit@k/MRR) primary, LoCoMo secondary. Results will be published in this README once available.
