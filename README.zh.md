@@ -52,9 +52,18 @@ Memo 的定位落在 [《Memory for Large Language Models》](https://arxiv.org/
 
 写入（`memo_remember`）与读取（`memo_search` 检索 + 片段/标题/时间过滤）对应综述的记忆操作视角；记忆整合与压缩是下一里程碑。
 
-## Benchmark 目标
+## Benchmark
 
-主测 LongMemEval-S（检索 hit@k/MRR），辅测 LoCoMo。结果出来后会在本 README 公布。
+在 [LongMemEval-S](https://arxiv.org/abs/2410.10813)（500 个问题，每题 54 个干扰会话）上实测，会话级检索、SQLite FTS5/BM25——与 DSH 官方会话搜索同引擎级别：
+
+| 查询模式 | hit@1 | hit@5 | hit@10 | MRR |
+|---|---|---|---|---|
+| 整句短语（DSH 原生语义） | 0.2% | 0.2% | 0.2% | 0.002 |
+| **Memo 检索（短语优先 + 分词合并）** | **86.6%** | **97.0%** | **98.8%** | **0.911** |
+
+这个差距正是 Memo 存在的理由：原生搜索 API 把整句查询当作一个精确短语，提问式查询几乎永远打不中。`memo_search` 用"短语命中优先 + 逐词匹配按命中数排序合并"解决了它。参照系：同类工具的 BM25+向量混合基线在同一 benchmark 上约为 95% R@5。
+
+完整协议与评测脚本：仓库中的 `bench/run.cjs`。
 
 ## 许可证
 

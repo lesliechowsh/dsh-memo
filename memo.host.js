@@ -1,12 +1,16 @@
 // Memo (dsh-memo) — host-side dynamic plugin, canonical development form.
-// Deployed in this process as plugin `memo-7`, pkg-14.
+// Deployed in this process as plugin `memo-7`, pkg-16.
 // Registers three model tools on the official sessionQuery service:
-//   memo_search   — cross-session full-text recall + memo-note merge
+//   memo_search   — cross-session recall (phrase-first + tokenized merge)
 //   memo_remember — distilled durable notes (facts, decisions, preferences)
-//   memo_stats    — corpus overview (session count, recent titles, note count)
+//   memo_stats    — corpus overview
 //
-// Notes live at $DSH_HOME/memo/notes.jsonl. The dynamic sandbox has no
-// `process`, so DSH_HOME is resolved per tool execution via
+// Recall design: the official API quotes the whole query as one inert FTS5
+// phrase, which question-style queries almost never match (LongMemEval-S
+// hit@5 measured at 0.2%). memo_search therefore runs a phrase search first,
+// then per-term searches merged by matched-term count (measured hit@5 97.0%).
+//
+// Notes live at $DSH_HOME/memo/notes.jsonl, resolved per tool execution via
 // shellEnv.collect(exec) — never hardcode a machine path.
 return {
   apply(ctx) {
@@ -62,6 +66,52 @@ return {
       },
     })
 
+    async function phraseSearch(query, limit, sessionId, since) {
+      if (sessionId !== undefined) {
+        const page = await sessionQuery.searchEvents({
+          sessionId,
+          query: String(query),
+          limit,
+          ...(since !== undefined ? { filters: [{ kind: 'time', from: since }] } : {}),
+        })
+        return (page.items || []).map((hit) => ({ sessionId, title: null, snippet: hit.snippet ?? '', time: hit.time ?? null, seq: hit.seq ?? null, source: 'event', mode: 'phrase' }))
+      }
+      const page = await sessionQuery.searchSessions({
+        query: String(query),
+        limit,
+        ...(since !== undefined ? { eventFilters: [{ kind: 'time', from: since }] } : {}),
+      })
+      return (page.items || []).map((hit) => {
+        const bm = hit.bestMatch || {}
+        return { sessionId: hit.id ?? hit.sessionId, title: null, snippet: bm.snippet ?? '', time: bm.time ?? null, seq: bm.seq ?? null, source: 'event', mode: 'phrase' }
+      })
+    }
+
+    async function tokenizedSearch(query, limit, since) {
+      const terms = [...new Set(String(query).toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 2))].slice(0, 8)
+      if (terms.length <= 1) return []
+      const collected = new Map()
+      for (const term of terms) {
+        let page
+        try {
+          page = await sessionQuery.searchSessions({
+            query: term,
+            limit: Math.max(limit, 8),
+            ...(since !== undefined ? { eventFilters: [{ kind: 'time', from: since }] } : {}),
+          })
+        } catch (err) { continue }
+        for (const hit of page.items || []) {
+          const id = String(hit.id ?? hit.sessionId ?? '')
+          if (id === '') continue
+          const bm = hit.bestMatch || {}
+          const cur = collected.get(id)
+          if (cur !== undefined) cur.count += 1
+          else collected.set(id, { sessionId: id, title: null, snippet: bm.snippet ?? '', time: bm.time ?? null, seq: bm.seq ?? null, source: 'event', mode: 'terms', count: 1 })
+        }
+      }
+      return [...collected.values()].sort((a, b) => (b.count - a.count) || ((b.time ?? 0) - (a.time ?? 0))).slice(0, limit)
+    }
+
     // ---------- memo_search ----------
     const searchTool = harness.defineTool({
       name: 'memo_search',
@@ -75,43 +125,27 @@ return {
       output: textOutput(),
       execute: async (args, exec) => {
         const limit = typeof args.limit === 'number' ? Math.max(1, Math.min(50, Math.floor(args.limit))) : 10
+        const since = typeof args.since === 'number' ? args.since : undefined
+        const sessionId = typeof args.sessionId === 'string' && args.sessionId !== '' ? args.sessionId : undefined
         const result = { sessions: [], notes: [], limit }
         if (sessionQuery !== undefined) {
           try {
-            if (typeof args.sessionId === 'string' && args.sessionId !== '') {
-              const page = await sessionQuery.searchEvents({
-                sessionId: args.sessionId,
-                query: String(args.query),
-                limit,
-                ...(typeof args.since === 'number' ? { filters: [{ kind: 'time', from: args.since }] } : {}),
-              })
-              for (const hit of page.items || []) {
-                result.sessions.push({ sessionId: args.sessionId, title: null, snippet: hit.snippet ?? '', time: hit.time ?? null, seq: hit.seq ?? null, source: 'event' })
-              }
-            } else {
-              const page = await sessionQuery.searchSessions({
-                query: String(args.query),
-                limit,
-                ...(typeof args.since === 'number' ? { eventFilters: [{ kind: 'time', from: args.since }] } : {}),
-              })
-              const hits = page.items || []
-              const ids = [...new Set(hits.map((h) => h.id ?? h.sessionId).filter(Boolean))]
-              const titles = {}
-              try {
-                const rows = await sessionQuery.readTitleSnapshots(ids)
-                for (const row of rows || []) {
-                  const value = row && typeof row === 'object' ? (row.value ?? row) : null
-                  const id = value && (value.id ?? (value.header && value.header.id) ?? (value.session && value.session.id))
-                  const title = value && (value.title ?? (value.titleSnapshot && value.titleSnapshot.title))
-                  if (id !== undefined && id !== null) titles[String(id)] = typeof title === 'string' ? title : null
+            const phrase = await phraseSearch(args.query, limit, sessionId, since)
+            const merged = []
+            const seen = new Set()
+            for (const hit of phrase) {
+              seen.add(String(hit.sessionId))
+              merged.push(hit)
+            }
+            if (sessionId === undefined) {
+              for (const hit of await tokenizedSearch(args.query, limit, since)) {
+                if (!seen.has(String(hit.sessionId))) {
+                  seen.add(String(hit.sessionId))
+                  merged.push(hit)
                 }
-              } catch (err) { /* titles are optional */ }
-              for (const hit of hits) {
-                const id = hit.id ?? hit.sessionId
-                const bm = hit.bestMatch || {}
-                result.sessions.push({ sessionId: id ?? null, title: titles[String(id)] ?? null, snippet: bm.snippet ?? '', time: bm.time ?? null, seq: bm.seq ?? null, source: 'event' })
               }
             }
+            result.sessions = merged.slice(0, limit)
           } catch (err) {
             result.error = 'search failed: ' + String((err && err.message) || err)
           }

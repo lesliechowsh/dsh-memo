@@ -52,9 +52,18 @@ Memo sits cleanly on the memory taxonomy of [Memory for Large Language Models](h
 
 Writing (`memo_remember`) and reading (`memo_search` retrieval with snippets, titles, and time filters) follow the survey's memory-operation view; consolidation and compression are the next milestone.
 
-## Benchmark targets
+## Benchmark
 
-LongMemEval-S (retrieval hit@k/MRR) primary, LoCoMo secondary. Results will be published in this README once available.
+Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813) (500 questions, 54-session haystacks per question), session-level retrieval with SQLite FTS5/BM25 — the same engine class as DSH's official session search:
+
+| Query mode | hit@1 | hit@5 | hit@10 | MRR |
+|---|---|---|---|---|
+| Whole-question phrase (raw DSH semantics) | 0.2% | 0.2% | 0.2% | 0.002 |
+| **Memo retrieval (phrase-first + tokenized merge)** | **86.6%** | **97.0%** | **98.8%** | **0.911** |
+
+The gap is why Memo exists: the raw search API treats a query as one exact phrase, which question-style queries almost never match. `memo_search` fixes this by merging phrase hits with per-term matches ranked by matched-term count. For reference, the hybrid BM25+vector baseline reported by comparable tools is ~95% R@5 on the same benchmark.
+
+Full protocol and harness: `bench/run.cjs` in the repository.
 
 ## License
 
