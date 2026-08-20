@@ -85,6 +85,20 @@ Memo re-indexes nothing: DSH's `sessionQuery` service is the single source of tr
 
 ## Usage
 
+### Try it in 60 seconds
+
+After installing, ask your agent these three things in one conversation. Each
+one needs memory of the *previous* exchange, so each exercises the search:
+
+1. *"记一下：这个项目发布渠道的约定是 npm 为唯一正式渠道。"* (the agent writes a note)
+2. *"我们记的'发布渠道的约定'是什么？"* (the agent must recall it — `memo_search` finds the note)
+3. *"再记一条：demo 数据都放在 bench 目录。"* then *"我们记的 demo 数据放在哪？"* (a second round of the same loop)
+
+You just experienced the whole product: write, recall, write, recall — no
+setup beyond the install, no external service involved.
+
+### Day-to-day
+
 The agent reaches for `memo_search` by itself when the answer depends on history ("Did we ever discuss SSH-based coding agents?"). Filter when you know the neighborhood: `memo_search(query: "benchmark", since: 1787000000000)`. Write distilled facts with `memo_remember(text: …, tags: "naming,convention")`, find them later with `memo_search(query: "naming", tags: "convention")`.
 
 ## Design & research grounding

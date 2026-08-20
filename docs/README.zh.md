@@ -85,6 +85,18 @@ Memo 不重建索引：DSH 的 `sessionQuery` 服务是唯一真相源。每次�
 
 ## 用法
 
+### 60 秒上手
+
+安装完成后，在同一次对话里向 agent 说这四句话。每一句都需要上一句的记忆，所以每一步都在实战检索：
+
+1. *"记一下：这个项目发布渠道的约定是 npm 为唯一正式渠道。"*（agent 写一条笔记）
+2. *"我们记的'发布渠道的约定'是什么？"*（agent 必须回忆——`memo_search` 找到那条笔记）
+3. *"再记一条：demo 数据都放在 bench 目录。"* 然后 *"我们记的 demo 数据放在哪？"*（再来一轮同样的循环）
+
+到此你已体验完整产品：写、回忆、再写、再回忆——除了安装，没有任何额外配置，没有任何外部服务。
+
+### 日常使用
+
 答案依赖历史时 agent 会自己调用 `memo_search`（"我们有没有讨论过基于 SSH 的编码 agent？"）。知道大概范围时加过滤：`memo_search(query: "benchmark", since: 1787000000000)`。用 `memo_remember(text: …, tags: "naming,convention")` 写蒸馏事实，之后用 `memo_search(query: "naming", tags: "convention")` 找回。
 
 ## 设计与研究基础
