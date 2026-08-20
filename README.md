@@ -3,17 +3,51 @@
 [中文文档](./README.zh.md)
 
 [![npm](https://img.shields.io/npm/v/dsh-memo)](https://www.npmjs.com/package/dsh-memo)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-memo)](https://www.npmjs.com/package/dsh-memo)
 [![license](https://img.shields.io/npm/l/dsh-memo)](LICENSE)
 
-Session memory for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) agents — built directly on the official `sessionQuery` service, so every session you ever had is searchable memory. Local-first, zero infrastructure, no vector database.
+**Your agent's memory of everything it ever did — across every session, with zero infrastructure.**
+
+DeepSeek Harness already records every session, message, and tool call. Memo turns that corpus into searchable memory your agent can actually use: ask about anything from any past session, and get the evidence back in one tool call.
+
+## Quick example
+
+> You: *"我们之前聊过 Dieter Rams 的事吗？"*
+> Agent calls `memo_search("Dieter Rams")` →
+
+```json
+{
+  "sessions": [
+    {
+      "sessionId": "session-49924467-9cd1-414a-9998-f207782c72ad",
+      "title": "Weniger 主题设计",
+      "snippet": "…「DESIGN DIETER RAMS」是已注册商标，Rams Foundation 积极管理其姓名与遗产…",
+      "time": 1787078839061,
+      "seq": 391234,
+      "source": "event",
+      "mode": "phrase"
+    }
+  ],
+  "notes": [],
+  "limit": 10
+}
+```
+
+> Agent: *"有——我们在 Weniger 主题项目里调研过：'DESIGN DIETER RAMS' 是注册商标，所以产品改名为 Weniger，还查了 Braun 的诉讼记录……"*
 
 ## Tools
 
 | Tool | What it does |
 |---|---|
-| `memo_search(query)` | Search every past session in this workspace plus your memo notes — snippets, titles, time filtering |
-| `memo_remember(text, tags)` | Write one durable note: facts, decisions, preferences that survive across sessions |
+| `memo_search(query, limit?, sessionId?, since?)` | Search every past session plus your memo notes — snippets, titles, time filtering |
+| `memo_remember(text, tags?)` | Write one durable note: facts, decisions, preferences that survive across sessions |
 | `memo_stats()` | Corpus overview: session count, recent titles, note count |
+
+## How it works
+
+- **Reads the official corpus** — DSH's `sessionQuery` service is the single source of truth; Memo re-indexes nothing, duplicates nothing.
+- **Two-layer recall** — phrase-first exact matches, then per-term matches merged by matched-term count. Question-style queries work, not just keywords.
+- **Notes are plain JSONL** at `$DSH_HOME/memo/notes.jsonl` — human-readable, editable, portable.
 
 ## Install
 
@@ -21,9 +55,10 @@ Session memory for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-ha
 dsh plugin --profile web add dsh-memo@latest
 ```
 
-Restart `dsh web`. The three `memo_*` tools appear in your agent's tool list.
+Restart `dsh web` — the three `memo_*` tools appear in your agent's tool list.
 
-Manual profile install (deployments without the `dsh plugin` subcommand):
+<details>
+<summary>Deployments without the <code>dsh plugin</code> subcommand (manual)</summary>
 
 1. `cd "$DSH_HOME/profiles/web" && npm install dsh-memo`
 2. Append to the profile's `cordis.patch.yml`:
@@ -36,9 +71,34 @@ Manual profile install (deployments without the `dsh plugin` subcommand):
 
 3. Restart `dsh web`.
 
-## Where notes live
+</details>
 
-`memo_remember` appends to `$DSH_HOME/memo/notes.jsonl` — plain JSONL you can edit, back up, or delete freely.
+## Usage
+
+### Recall anything from any session
+
+Ask naturally — the agent reaches for `memo_search` when the answer depends on history:
+
+> "Did we ever discuss SSH-based coding agents? What did we conclude?"
+
+Filter by time or session when you know the neighborhood:
+
+```
+memo_search(query: "benchmark", since: 1787000000000)
+memo_search(query: "theme tokens", sessionId: "session-49924467-…")
+```
+
+### Write durable notes
+
+```
+memo_remember(text: "Product naming: dsh- prefix + snake_case memo_* tools. No real-person names (Dieter Rams lesson).", tags: "naming,convention")
+```
+
+### Check the corpus
+
+```
+memo_stats()  →  { sessions: 19, notes: 4, recent: […] }
+```
 
 ## Design & research grounding
 
@@ -50,11 +110,11 @@ Memo sits cleanly on the memory taxonomy of [Memory for Large Language Models](h
 | Update dynamics | **Online** — DSH appends every message, tool call, and result as it happens; `memo_remember` writes distilled notes |
 | Persistence | **Long-term** — survives context windows, sessions, and process restarts |
 
-Writing (`memo_remember`) and reading (`memo_search` retrieval with snippets, titles, and time filters) follow the survey's memory-operation view; consolidation and compression are the next milestone.
+Writing (`memo_remember`) and reading (`memo_search`) follow the survey's memory-operation view; consolidation and compression are on the roadmap.
 
 ## Benchmark
 
-Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813) (500 questions, 54-session haystacks per question), session-level retrieval with SQLite FTS5/BM25 — the same engine class as DSH's official session search. Full protocol and harness: [`bench/`](bench/README.md).
+Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813) (500 questions, 54-session haystacks per question), session-level retrieval with SQLite FTS5/BM25 — the same engine class as DSH's official session search. Full protocol and environment: [`bench/`](bench/README.md).
 
 **Overall: hit@1 86.6% · hit@5 97.0% · hit@10 98.8% · MRR 0.911**
 
@@ -67,7 +127,12 @@ Measured on [LongMemEval-S](https://arxiv.org/abs/2410.10813) (500 questions, 54
 | single-session-assistant | 56 | 100.0% | 100.0% | 1.000 |
 | single-session-preference | 30 | 53.3% | 96.7% | 0.670 |
 
-`memo_search` ships this retrieval: phrase-first exact matches, then per-term matches merged by matched-term count. Environment and full protocol: [`bench/`](bench/README.md) (Node 26 + SQLite 3.53 FTS5, deterministic, no model calls).
+## Roadmap
+
+- [ ] LoCoMo secondary benchmark
+- [ ] End-to-end QA (retrieval + answer) on a 100-question subset
+- [ ] Better recall for preference-type questions
+- [ ] Tag search and note deduplication
 
 ## License
 
