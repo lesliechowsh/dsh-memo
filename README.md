@@ -42,15 +42,15 @@ Manual profile install (deployments without the `dsh plugin` subcommand):
 
 ## Design & research grounding
 
-Memo's architecture maps directly onto the memory taxonomy of [A Survey on the Memory Mechanism of Large Language Model based Agents](https://arxiv.org/abs/2404.13501) (Zhang et al., THUNLP · Tsinghua):
+Memo sits cleanly on the memory taxonomy of [Memory for Large Language Models](https://arxiv.org/abs/2607.25380) (Zhoubian, Zhang, Kharlamov & Tang — THUNLP · Tsinghua / NUS), which characterizes memory along three orthogonal axes:
 
-| Survey dimension | Memo |
+| Axis | Memo |
 |---|---|
-| Memory sources | Agent-generated: DSH logs every message, tool call, and result as it happens |
-| Memory form | External memory — plain JSONL logs and notes; no vector database, no weight training |
-| Memory writing | Automatic (the session log is the write path) plus manual distillation via `memo_remember` |
-| Memory reading | Retrieval-based read-out: full-text search with snippets, titles, and time filters (`memo_search`) |
-| Memory management | Raw full memory in v1; summarization, compression, and forgetting are on the roadmap |
+| Representation | **Explicit** — independently addressable JSONL logs and notes, decoupled from model computation |
+| Update dynamics | **Online** — DSH appends every message, tool call, and result as it happens; `memo_remember` writes distilled notes |
+| Persistence | **Long-term** — survives context windows, sessions, and process restarts |
+
+Writing (`memo_remember`) and reading (`memo_search` retrieval with snippets, titles, and time filters) follow the survey's memory-operation view; consolidation and compression are the next milestone.
 
 ## Benchmark targets
 

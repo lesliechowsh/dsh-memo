@@ -42,15 +42,15 @@ dsh plugin --profile web add dsh-memo@latest
 
 ## 设计与研究基础
 
-Memo 的架构直接对应 [《A Survey on the Memory Mechanism of Large Language Model based Agents》](https://arxiv.org/abs/2404.13501)（清华大学 THUNLP，唐杰教授团队）提出的记忆分类法：
+Memo 的定位落在 [《Memory for Large Language Models》](https://arxiv.org/abs/2607.25380)（清华 THUNLP 唐杰教授团队 / NUS）提出的架构化记忆分类法上，该综述以三个正交轴刻画记忆：
 
-| 综述维度 | Memo |
+| 轴 | Memo |
 |---|---|
-| 记忆来源 | Agent 生成：DSH 自动记录每条消息、每次工具调用与结果 |
-| 记忆形态 | 外部记忆——纯 JSONL 日志与笔记；无向量数据库、无权重训练 |
-| 记忆写入 | 自动（会话日志即写路径）+ `memo_remember` 手动蒸馏 |
-| 记忆读取 | 基于检索的读取：全文搜索 + 片段、标题、时间过滤（`memo_search`） |
-| 记忆管理 | v1 为原始全量记忆；总结、压缩与遗忘在路线图中 |
+| 表征 | **显式** —— 可独立寻址的 JSONL 日志与笔记，与模型计算解耦 |
+| 更新动态 | **在线** —— DSH 实时追加每条消息、工具调用与结果；`memo_remember` 写入蒸馏笔记 |
+| 持久性 | **长期** —— 跨上下文窗口、跨会话、跨进程重启存续 |
+
+写入（`memo_remember`）与读取（`memo_search` 检索 + 片段/标题/时间过滤）对应综述的记忆操作视角；记忆整合与压缩是下一里程碑。
 
 ## Benchmark 目标
 
