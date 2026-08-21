@@ -4,6 +4,25 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## Unreleased
+
+- **Dogfood finding: workspace-instruction injection pollutes the session
+  index (candidate fix, not yet shipped).** Discovered while self-reviewing
+  memo_search against real sessions: every session log carries the injected
+  AGENTS.md/system-reminder blocks as `user/message` events, and the A-prime
+  engine indexes them like real conversation — so any AGENTS.md vocabulary
+  hits EVERY session. Measured on this deployment: "session log" returned
+  9/10 hits with empty snippet+events (token-level AGENTS.md matches);
+  "冯骥" surfaced 5 sessions whose only match is the AGENTS.md principles
+  line. Invisible to bench (bench corpora have no injected prompts), and
+  df/IDF statistics are distorted by the ~every-session AGENTS.md text.
+  Candidate fix: skip `user/message` events whose text starts with
+  `<system-reminder>` at index time, then re-verify common-word queries
+  drop to real hits only before shipping. Same test also confirmed the
+  documented freshness boundary: memo_search sees the current session only
+  as a snapshot from its first sync — reading the live log directly is the
+  way to answer "what did we just say in this conversation".
+
 ## 0.12.0 — 2026-08-21
 
 - **A-prime engine: session search without FTS calls.** The FTS backend
