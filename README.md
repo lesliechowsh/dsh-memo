@@ -115,12 +115,9 @@ setup beyond the install, no external service involved.
 
 The agent reaches for `memo_search` by itself when the answer depends on history ("Did we ever discuss SSH-based coding agents?"). Filter when you know the neighborhood: `memo_search(query: "benchmark", since: 1787000000000)`. Write distilled facts with `memo_remember(text: …, tags: "naming,convention")`, find them later with `memo_search(query: "naming", tags: "convention")`. Every session hit carries a `snippet` (the best-matching event); the top 3 hits also carry `events` — up to 3 matching events each — so the agent can read the actual passage instead of a one-line match.
 
-### When the backend is slow
+### Startup, freshness, and the slow backend
 
-DSH's session-query FTS backend reconciles its whole live corpus on every call — on slow machines a single call can take tens of seconds. Memo does not use that path for search: it reads the corpus once at startup through the official exact-read APIs (fast, no reconcile) and answers from an in-memory index over the conversation events. Two consequences, both by design:
-
-- The index covers user and assistant messages, compaction summaries, and session titles — the authoritative conversation record (source-verified: streaming chunks and tool machinery, ~93% of raw bytes, are folded into or superseded by the indexed events). Searches during the startup build return partial results with an `indexing` progress field.
-- Freshness is minutes-stale by design: new sessions are indexed once they appear in the session list; a session that grew is re-read at the next restart. Notes search is unaffected and always current.
+DSH's session-query FTS backend reconciles its whole live corpus on every call — on slow machines a single call can take tens of seconds. Memo does not use that path: it indexes the conversation events (user and assistant messages, compaction summaries, session titles — the authoritative record; streaming chunks are ~90% of raw bytes and fold into the indexed messages, source-verified) into an inverted index persisted at `$DSH_HOME/memo/index.json`. Boots load it in seconds; a background refresh then picks up new sessions with pauses between reads so the Web UI stays available. Injected workspace instructions (`<system-reminder` blocks) are not indexed — they repeat in every session and would pollute ranking. The current conversation is skipped (it is already in your agent's context), and very large sessions are indexed once rather than re-read at every boot (their reads are synchronous multi-minute server-side operations); searches over them cover content up to the last index. Notes search is unaffected and always current.
 
 ## Design & research grounding
 

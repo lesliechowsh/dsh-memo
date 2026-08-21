@@ -1,14 +1,11 @@
 // Memo (dsh-memo) — host-side dynamic plugin, canonical development form.
 // Behavioral mirror of index.js (the npm form) — keep both in sync.
 // 0.12.0: A-prime engine — process-local inverted index over conversation
-// events read via the official exact-read APIs (listSessions/readSession);
-// NO FTS calls (the FTS backend reconciles the whole live corpus per call,
-// measured 35-47s/call on phone-class devices).
-//
-// Contract notes (do not regress):
-//   - SessionHeader has no title; fold titles via readTitleSnapshots.
-//   - Notes are appended raw (never rewritten from parsed rows).
-//   - DSH_HOME resolves per execution via shellEnv.collect(exec) — no cache.
+// events read via the official exact-read APIs; NO FTS calls.
+// 0.12.1: persisted index + boot-safety (live-skip, reminder-skip, giant
+// policy, throttled reads). The dynamic sandbox has no `process`, so the
+// persistence layer self-disables here (in-memory only) — the npm form is
+// the shipping path.
 return {
   apply(ctx) {
     const sessionQuery = ctx.get('sessionQuery')
@@ -140,23 +137,35 @@ return {
     } catch (err) { /* titles optional */ }
   }
 
-  // ---------- A-prime engine (0.12.0) ----------
+  // ---------- A-prime engine (0.12.0; persisted + boot-safe in 0.12.1) ----------
   // Process-local inverted index over conversation events, read through the
   // official exact-read APIs (listSessions/readSession — the backend-
   // independent tier that does NOT trigger the FTS reconcile; measured
   // 35-47 s per FTS call on this device class vs 85-527 ms per readSession).
-  // Corpus slice (measured on a 27-session / 527 MB deployment): 90.5% of
-  // bytes are assistant/chunk streaming deltas, ~3% tool machinery; the
-  // authoritative conversation record is assistant/message + user/message
-  // (~29 MB). Source-verified in dsh-agent-loop: every chunk is folded into
-  // the final assistant/message (sourceEventSeqs), so skipping chunks loses
-  // nothing. Freshness (user decision): search targets cross-session, older
-  // content — build once at startup in the background, searches during the
-  // build see the partial index (disclosed via `indexing`), new sessions
-  // are indexed lazily once they appear in listSessions, grown sessions are
-  // re-read only at restart. No FTS calls at all.
+  //
+  // 0.12.1 boot-safety and persistence:
+  //   - The index persists to $DSH_HOME/memo/index.json and boots LOAD it
+  //     (seconds) instead of re-reading the corpus — 0.12.0 re-read 527 MB
+  //     synchronously and blocked the Web UI for minutes after every
+  //     restart (boot-availability rule).
+  //   - Live sessions are skipped: the current conversation is already in
+  //     the agent's context (maintainer practice — search targets
+  //     cross-session, older content).
+  //   - Injected workspace instructions (user/message texts starting with
+  //     <system-reminder) are NOT indexed — they repeat in every session
+  //     and polluted df/IDF statistics (dogfood finding, 2026-08-21).
+  //   - Giant sessions (raw event count > GIANT_EVENTS) are indexed once
+  //     and never re-read: a giant's readSession is a multi-minute
+  //     synchronous server-side block (the read clones every event
+  //     server-side) that no plugin-side chunking can split. Their content
+  //     stays searchable up to the last index; cheaper sessions refresh on
+  //     boot, throttled with work-scaled pauses.
   const INDEXED_TYPES = new Set(["user/message", "assistant/message", "compaction/summary", "session/title"]);
+  const GIANT_EVENTS = 20000;
+  const REMINDER_PREFIX = "<system-reminder";
 
+  // Token sequence: ASCII word runs (len >= 1) + contiguous Han runs (>= 2)
+  // as single tokens — the unicode61 behavior the FTS index had.
   function seqTokens(text) {
     const out = [];
     for (const m of String(text).toLowerCase().matchAll(/[a-z0-9]+|\p{Script=Han}+/gu)) {
@@ -210,19 +219,21 @@ return {
 
   function rankCmp(a, b) {
     return b.occ - a.occ || a.len - b.len || b.time - a.time ||
-      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) || b.seq - b.seq;
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) || b.seq - a.seq;
   }
 
-  // index = { sessions: Map(id -> { events: [{text, tokens, len, time, seq, type}], inverted: Map(token -> number[]) }) }
-  const memoIndex = { sessions: new Map(), building: false, built: 0, total: 0, startedAt: 0 };
+  // index = { sessions: Map(id -> { events, inverted, rawCount }) }
+  const memoIndex = { sessions: new Map(), building: false, built: 0, total: 0, startedAt: 0, loaded: false };
 
-  function indexSession(id, snap) {
+  function indexSession(id, snap, rawCount) {
     const events = [];
     const inverted = new Map();
+    let raw = 0;
     for (const ev of (snap && snap.events) || []) {
+      raw++;
       if (!INDEXED_TYPES.has(String(ev.type))) continue;
       const text = eventText(ev);
-      if (text === "") continue;
+      if (text === "" || text.startsWith(REMINDER_PREFIX)) continue;
       const tokens = seqTokens(text);
       if (tokens.length === 0) continue;
       const k = events.length;
@@ -233,7 +244,62 @@ return {
         arr.push(k);
       }
     }
-    memoIndex.sessions.set(String(id), { events, inverted });
+    memoIndex.sessions.set(String(id), { events, inverted, rawCount: rawCount !== undefined ? rawCount : raw });
+  }
+
+  // The npm form runs in the host process where process.env carries
+  // DSH_HOME (fallback: HOME/.dsh). The dynamic dev sandbox has no process
+  // and simply skips persistence (in-memory index only).
+  function persistHome() {
+    try {
+      if (typeof process === "undefined" || !process.env) return null;
+      const direct = process.env.DSH_HOME;
+      if (typeof direct === "string" && direct !== "") return direct.replace(/\/+$/, "");
+      const home = process.env.HOME;
+      if (typeof home === "string" && home !== "") return home.replace(/\/+$/, "") + "/.dsh";
+      return null;
+    } catch (err) { return null; }
+  }
+
+  async function saveIndexFile() {
+    const home = persistHome();
+    if (home === null) return;
+    const out = { version: 1, savedAt: Date.now(), sessions: {} };
+    for (const [id, s] of memoIndex.sessions) {
+      out.sessions[id] = { rawCount: s.rawCount, events: s.events.map((e) => [e.type, e.time, e.seq, e.text]) };
+    }
+    try {
+      const target = await fsService.resolve(home + "/memo/index.json");
+      await ctx.fs.writeText(target, JSON.stringify(out));
+    } catch (err) { /* persistence best-effort */ }
+  }
+
+  async function loadIndexFile() {
+    const home = persistHome();
+    if (home === null) return false;
+    try {
+      const target = await fsService.resolve(home + "/memo/index.json");
+      const raw = await ctx.fs.readText(target);
+      const parsed = JSON.parse(raw);
+      if (parsed === null || typeof parsed !== "object" || parsed.version !== 1 || typeof parsed.sessions !== "object") return false;
+      for (const [id, rec] of Object.entries(parsed.sessions)) {
+        const events = (rec && Array.isArray(rec.events) ? rec.events : []).map((row) => {
+          const text = String(row[3] ?? "");
+          return { type: String(row[0] ?? ""), time: Number(row[1]) || 0, seq: Number(row[2]) || 0, text, tokens: seqTokens(text), len: Array.from(text).length };
+        });
+        const inverted = new Map();
+        events.forEach((ev, k) => {
+          for (const t of new Set(ev.tokens)) {
+            let arr = inverted.get(t);
+            if (arr === undefined) { arr = []; inverted.set(t, arr); }
+            arr.push(k);
+          }
+        });
+        memoIndex.sessions.set(String(id), { events, inverted, rawCount: (rec && rec.rawCount) || events.length });
+      }
+      memoIndex.loaded = true;
+      return true;
+    } catch (err) { return false; }
   }
 
   async function buildIndexAll() {
@@ -243,63 +309,47 @@ return {
     try {
       const records = await sessionQuery.listSessions();
       memoIndex.total = records.length;
+      const haveIndex = await loadIndexFile();
       for (const rec of records) {
         const id = (rec.header && rec.header.id) ?? null;
         if (id === null) continue;
+        const existing = haveIndex ? memoIndex.sessions.get(String(id)) : undefined;
+        // Live sessions: skipped — their content is in the agent's context.
+        if (rec.live === true) { memoIndex.built += 1; continue; }
+        // Giants already indexed: never re-read (multi-minute sync block).
+        if (existing !== undefined && existing.rawCount > GIANT_EVENTS) { memoIndex.built += 1; continue; }
+        const sessionT0 = Date.now();
         try {
           indexSession(String(id), await sessionQuery.readSession(String(id)));
         } catch (err) { /* skip unreadable session */ }
         memoIndex.built += 1;
+        // Boot-availability rule: yield to the host between sessions, with
+        // a pause scaled to the work just done.
+        const worked = Date.now() - sessionT0;
+        await new Promise((resolve) => setTimeout(resolve, Math.max(50, Math.min(2000, worked))));
       }
+      await saveIndexFile();
     } finally {
       memoIndex.building = false;
     }
   }
 
-  // Lazily index sessions that appeared after the build; cheap id-diff via
-  // listSessions (no FTS, no reconcile).
+  // Lazily index NEW non-live sessions; cheap id-diff via listSessions.
   async function syncNewSessions() {
     if (memoIndex.building) return;
     let records;
     try { records = await sessionQuery.listSessions(); } catch (err) { return; }
-    const fresh = records.filter((r) => {
-      const id = (r.header && r.header.id) ?? null;
-      return id !== null && !memoIndex.sessions.has(String(id));
-    });
-    for (const rec of fresh) {
-      const id = String(rec.header.id);
-      try { indexSession(id, await sessionQuery.readSession(id)); } catch (err) { /* skip */ }
+    let added = false;
+    for (const rec of records) {
+      const id = (rec.header && rec.header.id) ?? null;
+      if (id === null || rec.live === true) continue;
+      if (memoIndex.sessions.has(String(id))) continue;
+      try { indexSession(String(id), await sessionQuery.readSession(String(id))); added = true; } catch (err) { /* skip */ }
       memoIndex.built += 1;
       memoIndex.total += 1;
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
-  }
-
-  // Sessions whose representative event matches the token sequence.
-  function matchingSessions(phraseTokens) {
-    if (phraseTokens.length === 0) return [];
-    const out = [];
-    for (const [id, s] of memoIndex.sessions) {
-      const evs = s.inverted.get(phraseTokens[0]);
-      if (evs === undefined) continue;
-      let best = null;
-      for (const k of evs) {
-        const ev = s.events[k];
-        let occ;
-        if (phraseTokens.length === 1) {
-          occ = 0;
-          for (const t of ev.tokens) if (t === phraseTokens[0]) occ++;
-        } else {
-          occ = occurrencesIn(ev.tokens, phraseTokens);
-        }
-        if (occ === 0) continue;
-        if (best === null || occ > best.occ || (occ === best.occ && (ev.len < best.len ||
-          (ev.len === best.len && (ev.time > best.time || (ev.time === best.time && ev.seq > best.seq)))))) {
-          best = { occ, len: ev.len, time: ev.time, seq: ev.seq };
-        }
-      }
-      if (best !== null) out.push({ id, occ: best.occ, len: best.len, time: best.time, seq: best.seq });
-    }
-    return out;
+    if (added) await saveIndexFile();
   }
 
   // The shipped ranking (exp6-validated): phrase-first, then df-proxy IDF
@@ -312,8 +362,7 @@ return {
       if (sessionId !== undefined && id !== String(sessionId)) continue;
       pool.push([id, s]);
     }
-    const scopedIndex = {
-      sessions: new Map(pool),
+    const scoped = {
       matching(phraseTokens2) {
         if (phraseTokens2.length === 0) return [];
         const out = [];
@@ -347,7 +396,7 @@ return {
         return n;
       },
     };
-    const phraseRanked = scopedIndex.matching(phraseTokens).sort(rankCmp).slice(0, limit);
+    const phraseRanked = scoped.matching(phraseTokens).sort(rankCmp).slice(0, limit);
     const tokens = tokenize(String(query));
     const counts = new Map();
     const repTimes = new Map();
@@ -359,12 +408,12 @@ return {
         phrases.push([tokens[i] + " " + tokens[i + 1], (tokens[i] + " " + tokens[i + 1]).length]);
       }
       const N = pool.length;
-      const idfOf = (term) => Math.log((N + 1) / (1 + Math.min(scopedIndex.df(term), 50)));
+      const idfOf = (term) => Math.log((N + 1) / (1 + Math.min(scoped.df(term), 50)));
       for (const [phrase, lenWeight] of phrases) {
         const pts = phrase.split(" ");
         const isPair = pts.length === 2;
         const weight = isPair ? lenWeight * Math.max(idfOf(pts[0]), idfOf(pts[1])) : 4 * idfOf(pts[0]);
-        for (const c of scopedIndex.matching(pts).sort(rankCmp).slice(0, termLimit)) {
+        for (const c of scoped.matching(pts).sort(rankCmp).slice(0, termLimit)) {
           if (counts.has(c.id)) counts.set(c.id, counts.get(c.id) + weight);
           else { counts.set(c.id, weight); repTimes.set(c.id, c.time); }
         }
@@ -380,19 +429,17 @@ return {
     }
     const sessions = merged.slice(0, limit).map((id) => {
       const s = memoIndex.sessions.get(id);
-      const rep = (() => {
-        let best = null;
-        for (const k of s.inverted.get(phraseTokens[0]) || []) {
-          const ev = s.events[k];
-          const occ = occurrencesIn(ev.tokens, phraseTokens);
-          if (occ === 0) continue;
-          if (best === null || occ > best.occ || (occ === best.occ && (ev.len < best.len ||
-            (ev.len === best.len && (ev.time > best.time || (ev.time === best.time && ev.seq > best.seq)))))) {
-            best = { ...ev, occ };
-          }
+      let rep = null;
+      for (const k of s.inverted.get(phraseTokens[0]) || []) {
+        const ev = s.events[k];
+        if (since !== undefined && ev.time < since) continue;
+        const occ = occurrencesIn(ev.tokens, phraseTokens);
+        if (occ === 0 && !(phraseTokens.length === 1 && ev.tokens.includes(phraseTokens[0]))) continue;
+        if (rep === null || occ > rep.occ || (occ === rep.occ && (ev.len < rep.len ||
+          (ev.len === rep.len && (ev.time > rep.time || (ev.time === rep.time && ev.seq > rep.seq)))))) {
+          rep = { ...ev, occ };
         }
-        return best;
-      })();
+      }
       const hit = {
         sessionId: id,
         title: null,
@@ -402,7 +449,7 @@ return {
         source: "event",
         mode: "phrase",
       };
-      // Evidence: top-3 matching events straight from the index (no FTS).
+      // Evidence: top-3 matching events straight from the index.
       const evHits = [];
       for (const k of s.inverted.get(phraseTokens[0]) || []) {
         const ev = s.events[k];

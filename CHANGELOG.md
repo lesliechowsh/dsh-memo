@@ -4,24 +4,33 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
-## Unreleased
+## 0.12.1 — 2026-08-21
 
-- **Dogfood finding: workspace-instruction injection pollutes the session
-  index (candidate fix, not yet shipped).** Discovered while self-reviewing
-  memo_search against real sessions: every session log carries the injected
-  AGENTS.md/system-reminder blocks as `user/message` events, and the A-prime
-  engine indexes them like real conversation — so any AGENTS.md vocabulary
-  hits EVERY session. Measured on this deployment: "session log" returned
-  9/10 hits with empty snippet+events (token-level AGENTS.md matches);
-  "冯骥" surfaced 5 sessions whose only match is the AGENTS.md principles
-  line. Invisible to bench (bench corpora have no injected prompts), and
-  df/IDF statistics are distorted by the ~every-session AGENTS.md text.
-  Candidate fix: skip `user/message` events whose text starts with
-  `<system-reminder>` at index time, then re-verify common-word queries
-  drop to real hits only before shipping. Same test also confirmed the
-  documented freshness boundary: memo_search sees the current session only
-  as a snapshot from its first sync — reading the live log directly is the
-  way to answer "what did we just say in this conversation".
+- **Boot-safe persisted index.** 0.12.0 re-read the whole corpus at every
+  startup (527 MB synchronously — the Web UI was unusable for minutes after
+  each restart; boot-availability rule). The index now persists to
+  `$DSH_HOME/memo/index.json` and boots LOAD it in seconds, then refresh in
+  the background with work-scaled pauses between reads.
+- **Workspace-instruction pollution fixed (dogfood finding, verified).**
+  Every session log carries the injected AGENTS.md/system-reminder blocks as
+  `user/message` events, and the A-prime engine indexed them like real
+  conversation — measured before the fix: "session log" returned 9/10 hits
+  with empty snippets (pure AGENTS.md token matches); "冯骥" surfaced
+  sessions whose only match was the injected principles line; df/IDF
+  statistics were distorted by the every-session AGENTS.md text. Invisible
+  to bench (no injected prompts in benchmark corpora) — caught only by
+  real-use testing. Fix: `user/message` texts starting with
+  `<system-reminder` are skipped at index time; re-verified common-word
+  queries now return real hits only.
+- **Live sessions are skipped** — the current conversation is already in
+  the agent's context (maintainer practice: search targets cross-session,
+  older content).
+- **Giant-session policy.** A giant session's readSession is a multi-minute
+  synchronous server-side block (the read clones every event server-side —
+  verified against the backend source) that no plugin-side chunking can
+  split. Sessions with a raw event count over 20,000 are indexed once and
+  not re-read on later boots; their content stays searchable up to the last
+  index. Cheaper sessions refresh on boot, throttled.
 
 ## 0.12.0 — 2026-08-21
 
