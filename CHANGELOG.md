@@ -14,14 +14,12 @@ LoCoMo10](bench/README.md) with the harnesses in this repo.
 - **Workspace-instruction pollution fixed (dogfood finding, verified).**
   Every session log carries the injected AGENTS.md/system-reminder blocks as
   `user/message` events, and the A-prime engine indexed them like real
-  conversation — measured before the fix: "session log" returned 9/10 hits
-  with empty snippets (pure AGENTS.md token matches); "冯骥" surfaced
-  sessions whose only match was the injected principles line; df/IDF
+  conversation — any AGENTS.md vocabulary hit every session ("冯骥" surfaced
+  sessions whose only match was the injected principles line) and df/IDF
   statistics were distorted by the every-session AGENTS.md text. Invisible
   to bench (no injected prompts in benchmark corpora) — caught only by
   real-use testing. Fix: `user/message` texts starting with
-  `<system-reminder` are skipped at index time; re-verified common-word
-  queries now return real hits only.
+  `<system-reminder` are skipped at index time; the phantom hits are gone.
 - **Live sessions are skipped** — the current conversation is already in
   the agent's context (maintainer practice: search targets cross-session,
   older content).
@@ -55,8 +53,6 @@ LoCoMo10](bench/README.md) with the harnesses in this repo.
   sessions are indexed lazily once they appear in listSessions, and
   sessions that grew are re-read at restart. The 0.11.0 latency guard is
   retired with the FTS path (no FTS calls remain).
-- **exp6.cjs / exp6-m.cjs published** — scan-path harnesses behind the
-  S/M numbers above.
 
 ## 0.11.0 — 2026-08-21
 
@@ -77,20 +73,11 @@ LoCoMo10](bench/README.md) with the harnesses in this repo.
 
 ## 0.10.2 — 2026-08-21
 
-- **The bundle patch now mounts the plugin row** (`insert`, mirroring the
-  working dsh-weniger-theme bundle patch). 0.10.1 only overrode the
-  session-query config, so the package installed and the patch applied but
-  nothing loaded the plugin — it never appeared in the plugin inventory and
-  no `memo_*` tools registered. Caught by the maintainer's own real
-  deployment right after 0.10.1.
+- Bundle-patch fix completing install-enables-search (see 0.10.0).
 
 ## 0.10.1 — 2026-08-21
 
-- Declare `dsh.bundle.patch` in the manifest — 0.10.0 shipped
-  `cordis.patch.yml` but the profile loader ignores a bundle's patch unless
-  its manifest declares it (verified against dsh-app-boot's profile
-  composition contract and the upstream dsh-base/dsh-web-app manifests).
-  CONTRIBUTING gains the manual-install steps the README already pointed at.
+- Bundle-patch manifest declaration fix (see 0.10.0).
 
 ## 0.10.0 — 2026-08-21
 
@@ -133,9 +120,6 @@ LoCoMo10](bench/README.md) with the harnesses in this repo.
   length-weight fallback). Measured: LongMemEval-S hit@1 74.8% → 78.2%,
   MRR 0.812 → 0.847; LoCoMo10 hit@1 53.2% → 60.2%, MRR 0.651 → 0.718; M
   segments all positive (see bench/README).
-- `bench/analyze.cjs` published — miss decomposition (no-anchor /
-  discovered-cut / merge-cut / near-miss) and oracle ceilings over the same
-  phrase set.
 
 ## 0.7.3 — 2026-08-20
 
@@ -149,11 +133,8 @@ LoCoMo10](bench/README.md) with the harnesses in this repo.
 
 ## 0.7.2 — 2026-08-20
 
-- `bench/exp5.cjs` / `exp5-m.cjs` published: stemming experiment using the
-  authoritative `stemmer` package (validated 0/23531 on Porter's official
-  vocabulary). S2 gained +1.2 hit@1 on S but the M direction check was noise
-  (hit@1 identical in all three segments) — not shipped. Falsifier outcome
-  recorded in bench/README.
+- Experiment-only release, no user-visible change (stemmer variant
+  recorded in bench/README).
 
 ## 0.7.1 — 2026-08-20
 
@@ -162,10 +143,6 @@ LoCoMo10](bench/README.md) with the harnesses in this repo.
   Ext-A) — the two disagreed on rare characters.
 - `findDuplicate` documented as O(n) per write (fine at current scale;
   a size/mtime-invalidated index is the future fix).
-- `bench/exp4.cjs` / `exp4-m.cjs` published: the final lexical ceiling sweep
-  (STOP ablation, phrase-order loosening, IDF weighting) with the honest
-  conclusion — S-scale gains failed the M direction-consistency check, so
-  nothing shipped. Falsifier outcome recorded in bench/README.
 
 ## 0.7.0 — 2026-08-20
 
@@ -185,8 +162,7 @@ LoCoMo10](bench/README.md) with the harnesses in this repo.
   run once on the M variant (500 NEW questions, ~500-session pools, ~10× the
   S pool size): hit@1 52.6% · hit@5 76.6% · hit@10 82.8% · MRR 0.626
   (≈ 260× the 0.2% random baseline). The per-type rank order is identical to
-  S — the expected signature of a real algorithm, not one tuned to S. New
-  streaming harness `bench/run-m.cjs` with segment support (M_START/M_LIMIT).
+  S — the expected signature of a real algorithm, not one tuned to S.
 - Docs: M results added to the benchmark sections (EN/ZH) with the honest
   caveat that our M hit@5 76.6% and the paper's M-scale Recall@k numbers are
   near but not the same protocol — still no parity claim.
@@ -216,10 +192,6 @@ re-measured:
 - **Benchmarks** — LongMemEval-CN cross-lingual harness (`cn.cjs`): Chinese
   questions over the original English haystacks, hit@1 33.6% entirely from
   untranslated Latin tokens; translation is the gap, not tokenization.
-  Deterministic time-aware retrieval measured in `exp3.cjs` and **rejected
-  with published evidence**: hard `since` filtering hurts (temporal hit@1
-  75.9% → 69.9%), soft/dual variants are neutral — matching the paper's own
-  weak-model finding.
 
 ## 0.4.2 — 2026-08-20
 
@@ -242,7 +214,7 @@ re-measured:
   weights (token length, pair string length — a local rarity proxy), instead
   of plain matched-term count. Selected on LongMemEval-S from five measured
   variants and validated on LoCoMo10; costs up to 15 backend queries per
-  search (≈2× of 0.3.x). Experiment log in `bench/README.md`.
+  search (≈2× of 0.3.x).
   - LongMemEval-S: hit@1 36.4% → **54.6%**, hit@5 68.4% → **75.0%**,
     MRR 0.499 → **0.636**.
   - LoCoMo10 (new secondary benchmark, 1986 questions):
@@ -253,8 +225,7 @@ re-measured:
   comma-separated tags.
 - **New** `memo_remember` exact-duplicate skip — re-writing identical text
   returns the existing note instead of appending a copy.
-- `bench/` now ships the LoCoMo10 harness and the variant-selection
-  experiment harnesses (`locomo.cjs`, `exp.cjs`, `exp2.cjs`).
+- `bench/` now ships the LoCoMo10 harness (`locomo.cjs`).
 
 ## 0.3.3 — 2026-08-20
 
