@@ -448,10 +448,14 @@ exports.apply = function (ctx) {
       const hit = {
         sessionId: id,
         title: null,
-        // 0.12.2: clue-sufficiency — 1000 chars (~one full answer) instead of
-        // 240, so the agent can answer from the result instead of shelling
-        // out to read raw logs (observed in real use: the SSH test).
-        snippet: rep ? snippetAround(rep.text, phraseTokens[0], 1000) : "",
+        // 0.12.3: snippet length reverted to 240. 0.12.2's 1000-char bump was
+        // tuned to ONE observed case (the SSH test) and that case wanted the
+        // FULL turns — no fixed snippet size satisfies it, so the bump was
+        // neither benchmark-constrained (snippets don't affect ranking) nor
+        // need-supported. Presentation parameters are tuned only by a dogfood
+        // TALLY over several real queries ("could the snippet answer it?"),
+        // never by n=1. Full-text reading stays with the agent's own tools.
+        snippet: rep ? snippetAround(rep.text, phraseTokens[0], 240) : "",
         time: rep ? rep.time : null,
         seq: rep ? rep.seq : null,
         source: "event",
@@ -466,7 +470,7 @@ exports.apply = function (ctx) {
         evHits.push(ev);
       }
       evHits.sort((a, b) => (b.occ ?? 0) - (a.occ ?? 0) || a.len - b.len || b.time - a.time);
-      hit.events = evHits.slice(0, 3).map((ev) => ({ snippet: snippetAround(ev.text, phraseTokens[0], 600), time: ev.time, seq: ev.seq }));
+      hit.events = evHits.slice(0, 3).map((ev) => ({ snippet: snippetAround(ev.text, phraseTokens[0], 240), time: ev.time, seq: ev.seq }));
       return hit;
     });
     return { sessions };

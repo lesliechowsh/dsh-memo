@@ -4,6 +4,19 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.12.3 — 2026-08-22
+
+- **Snippet length reverted to 240 (0.12.2's 1000/600 bump rolled back).**
+  The bump was tuned to one observed case (the SSH test), and that case
+  wanted the full turns — no fixed snippet size satisfies it. Snippet
+  length does not affect ranking, so the benchmark falsifier never covered
+  it, and n=1 is not a real-usage ruler. New standing rule: presentation
+  parameters (snippet length, evidence count, result shape) are tuned only
+  by a dogfood tally over several real queries — "could the returned
+  snippet answer the query?" — never by a single case. The 0.12.2 patch
+  simplification and notes repositioning stand; only the snippet size
+  reverts.
+
 ## 0.12.2 — 2026-08-22
 
 - **Clue sufficiency.** Hit snippets grow from 240 to 1000 characters and
