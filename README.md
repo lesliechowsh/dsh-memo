@@ -39,19 +39,7 @@ dsh plugin --profile web add dsh-memo@latest
 
 Restart `dsh web` — the three `memo_*` tools appear in your agent's tool list. That's the whole setup. (Uninstall: `dsh plugin --profile web remove dsh-memo`; manual profile-edit steps for CLI-less deployments are in [CONTRIBUTING.md](CONTRIBUTING.md).)
 
-**One thing the install does for you:** DSH ships full-text session search opt-in — the platform default is `openAt: never`, so `searchSessions`/`searchEvents` are disabled until something turns them on. Memo's package carries a patch that enables the platform's built-in index on first use (`openAt: first-search`). Two honest consequences, both by DSH's design:
-
-- **The index lives in memory**, so a fresh boot rebuilds it on the first search. On a large corpus that first search is slow; every later search in the same process is fast.
-- Want a durable index instead? Add a `path` in your profile's `cordis.patch.yml`:
-
-```yaml
-- id: session-query-sqlite
-  config:
-    path: /path/to/your/dsh-home/storages/session-search.sqlite
-    openAt: first-search
-```
-
-If your deployment deliberately wants search off, re-disable it in a later patch layer (`openAt: never`); Memo then serves notes only and reports the disabled state honestly instead of fabricating hits. This applies to DSH ≥ 0.1.0-rc.7, the version that introduced the opt-in default.
+The install only mounts the plugin — it does not reconfigure DSH. Memo answers from its own persisted index (see below) and makes zero calls to the platform's FTS search, which upstream ships opt-in for its own reasons.
 
 ## What you get
 
@@ -74,6 +62,8 @@ Search every past session in the workspace plus your memo notes. `limit` default
 ### `memo_remember(text, tags?)`
 
 Write one durable note — facts, decisions, preferences that survive across sessions and appear in `memo_search` results. Returns `{ ok, note, path }`; identical text returns the existing note as `{ ok: true, duplicate: true, note }` instead of appending. Notes are one JSONL record per line at `$DSH_HOME/memo/notes.jsonl`.
+
+Its one indispensable job: the current conversation is deliberately not indexed (it is already in the agent's context), so when a decision made *now* must survive into future sessions, `memo_remember` is the only immediate channel — write it now, search it later. Use it sparingly for exactly that; rules that must be present in every session belong in your workspace instructions instead.
 
 ### `memo_stats()`
 

@@ -448,7 +448,10 @@ exports.apply = function (ctx) {
       const hit = {
         sessionId: id,
         title: null,
-        snippet: rep ? snippetAround(rep.text, phraseTokens[0], 240) : "",
+        // 0.12.2: clue-sufficiency — 1000 chars (~one full answer) instead of
+        // 240, so the agent can answer from the result instead of shelling
+        // out to read raw logs (observed in real use: the SSH test).
+        snippet: rep ? snippetAround(rep.text, phraseTokens[0], 1000) : "",
         time: rep ? rep.time : null,
         seq: rep ? rep.seq : null,
         source: "event",
@@ -463,7 +466,7 @@ exports.apply = function (ctx) {
         evHits.push(ev);
       }
       evHits.sort((a, b) => (b.occ ?? 0) - (a.occ ?? 0) || a.len - b.len || b.time - a.time);
-      hit.events = evHits.slice(0, 3).map((ev) => ({ snippet: snippetAround(ev.text, phraseTokens[0], 240), time: ev.time, seq: ev.seq }));
+      hit.events = evHits.slice(0, 3).map((ev) => ({ snippet: snippetAround(ev.text, phraseTokens[0], 600), time: ev.time, seq: ev.seq }));
       return hit;
     });
     return { sessions };

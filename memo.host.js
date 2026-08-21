@@ -1,11 +1,9 @@
 // Memo (dsh-memo) — host-side dynamic plugin, canonical development form.
 // Behavioral mirror of index.js (the npm form) — keep both in sync.
-// 0.12.0: A-prime engine — process-local inverted index over conversation
-// events read via the official exact-read APIs; NO FTS calls.
-// 0.12.1: persisted index + boot-safety (live-skip, reminder-skip, giant
-// policy, throttled reads). The dynamic sandbox has no `process`, so the
-// persistence layer self-disables here (in-memory only) — the npm form is
-// the shipping path.
+// 0.12.x: A-prime engine — process-local inverted index over conversation
+// events read via the official exact-read APIs; NO FTS calls. The dynamic
+// sandbox has no `process`, so the persistence layer self-disables here
+// (in-memory only) — the npm form is the shipping path.
 return {
   apply(ctx) {
     const sessionQuery = ctx.get('sessionQuery')
@@ -443,7 +441,10 @@ return {
       const hit = {
         sessionId: id,
         title: null,
-        snippet: rep ? snippetAround(rep.text, phraseTokens[0], 240) : "",
+        // 0.12.2: clue-sufficiency — 1000 chars (~one full answer) instead of
+        // 240, so the agent can answer from the result instead of shelling
+        // out to read raw logs (observed in real use: the SSH test).
+        snippet: rep ? snippetAround(rep.text, phraseTokens[0], 1000) : "",
         time: rep ? rep.time : null,
         seq: rep ? rep.seq : null,
         source: "event",
@@ -458,7 +459,7 @@ return {
         evHits.push(ev);
       }
       evHits.sort((a, b) => (b.occ ?? 0) - (a.occ ?? 0) || a.len - b.len || b.time - a.time);
-      hit.events = evHits.slice(0, 3).map((ev) => ({ snippet: snippetAround(ev.text, phraseTokens[0], 240), time: ev.time, seq: ev.seq }));
+      hit.events = evHits.slice(0, 3).map((ev) => ({ snippet: snippetAround(ev.text, phraseTokens[0], 600), time: ev.time, seq: ev.seq }));
       return hit;
     });
     return { sessions };

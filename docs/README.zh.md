@@ -39,19 +39,7 @@ dsh plugin --profile web add dsh-memo@latest
 
 重启 `dsh web`——agent 的工具列表里出现三个 `memo_*` 工具。整个安装就这些。（卸载：`dsh plugin --profile web remove dsh-memo`；无 CLI 部署的手动配置步骤见 [CONTRIBUTING.md](../CONTRIBUTING.md)。）
 
-**安装顺手做的一件事：** DSH 出厂时全文会话搜索是 opt-in 的——平台默认 `openAt: never`，`searchSessions`/`searchEvents` 处于禁用状态，直到有东西把它打开。Memo 的包自带补丁，安装即启用平台内置索引（`openAt: first-search`）。两个诚实的后果，都是 DSH 的设计：
-
-- **索引在内存里**，所以每次重启后的第一次搜索会重建索引。大语料下这第一次搜索会慢；同进程内的后续搜索都很快。
-- 想要持久索引？在你的 profile 的 `cordis.patch.yml` 里加一个 `path`：
-
-```yaml
-- id: session-query-sqlite
-  config:
-    path: /path/to/your/dsh-home/storages/session-search.sqlite
-    openAt: first-search
-```
-
-如果你的部署刻意想关掉搜索，在后置补丁层里重新设 `openAt: never` 即可；此时 Memo 只提供笔记功能，并如实报告禁用状态而不是编造命中。以上适用于 DSH ≥ 0.1.0-rc.7（引入 opt-in 默认值的版本）。
+安装只挂载插件，不改动 DSH 的任何配置。Memo 用自己的持久索引回答（见下文），对平台的 FTS 全文搜索**零调用**——那项功能由上游刻意设为 opt-in，是否开启由部署自己决定。
 
 ## 你能得到什么
 
@@ -74,6 +62,8 @@ Memo 刻意不把你的历史重建进自己的索引。如果你需要 DSH 之�
 ### `memo_remember(text, tags?)`
 
 写一条持久笔记——跨会话存续的事实、决定、偏好，会出现在 `memo_search` 结果里。返回 `{ ok, note, path }`；文本完全相同则返回已有笔记 `{ ok: true, duplicate: true, note }` 而不是重复写入。笔记以每行一条 JSON 记录的形式存在 `$DSH_HOME/memo/notes.jsonl`。
+
+它唯一不可替代的用途：当前会话刻意不进索引（内容已在 agent 上下文里），所以"现在刚做的决定"要留到以后的会话，`memo_remember` 是唯一即时的通道——现在写下，以后搜回。只在此时用它；每个会话都必须在场的内容应该写进你的工作区指令，而不是笔记。
 
 ### `memo_stats()`
 

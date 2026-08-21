@@ -4,6 +4,26 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.12.2 — 2026-08-22
+
+- **Clue sufficiency.** Hit snippets grow from 240 to 1000 characters and
+  evidence snippets to 600 — real use showed the agent shelling out to
+  bash/read to fetch full text after a correct hit (the SSH test); the
+  bigger fragment answers directly and removes that fallback. This is the
+  "make discovery excellent" direction, not a reader feature.
+- **Bundle patch simplified to the plugin row only.** The
+  session-query-sqlite override that enabled the platform FTS is removed —
+  Memo makes zero FTS calls and should not reconfigure a platform feature
+  upstream ships opt-in deliberately. Install docs (EN/ZH) rewritten to
+  match.
+- **Notes repositioned.** memo_remember's indispensable job is now stated
+  precisely: the current conversation is not indexed (it is in context), so
+  a decision made *now* that must survive into future sessions has exactly
+  one immediate channel — the note. Everything that must be present in
+  every session belongs in workspace instructions instead. Usage data on
+  this deployment (1 test note ever) means notes stay a supporting tool,
+  not a headline.
+
 ## 0.12.1 — 2026-08-21
 
 - **Boot-safe persisted index.** 0.12.0 re-read the whole corpus at every
