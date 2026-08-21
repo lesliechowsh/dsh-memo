@@ -429,9 +429,9 @@ exports.apply = function (ctx) {
       .slice(0, limit);
     const merged = [];
     const seen = new Set();
-    for (const c of [...phraseRanked, ...tokenRanked.map((id) => ({ id }))]) {
-      if (!seen.has(c.id)) { seen.add(c.id); merged.push(c.id); }
-    }
+    const fromPhrase = new Set();
+    for (const c of phraseRanked) if (!seen.has(c.id)) { seen.add(c.id); fromPhrase.add(c.id); merged.push(c.id); }
+    for (const id of tokenRanked) if (!seen.has(id)) { seen.add(id); merged.push(id); }
     const sessions = merged.slice(0, limit).map((id) => {
       const s = memoIndex.sessions.get(id);
       let rep = null;
@@ -459,7 +459,7 @@ exports.apply = function (ctx) {
         time: rep ? rep.time : null,
         seq: rep ? rep.seq : null,
         source: "event",
-        mode: "phrase",
+        mode: fromPhrase.has(id) ? "phrase" : "terms",
       };
       // Evidence: top-3 matching events straight from the index.
       const evHits = [];

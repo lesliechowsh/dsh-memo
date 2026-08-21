@@ -1,7 +1,5 @@
 // Memo (dsh-memo) — host-side dynamic plugin, canonical development form.
 // Behavioral mirror of index.js (the npm form) — keep both in sync.
-// 0.13.1: tool descriptions reviewed under writing-for-agents — tightened
-// wording, honest index boundary, caller-owned snippetChars knob.
 return {
   apply(ctx) {
     const sessionQuery = ctx.get('sessionQuery')
@@ -420,9 +418,9 @@ return {
       .slice(0, limit);
     const merged = [];
     const seen = new Set();
-    for (const c of [...phraseRanked, ...tokenRanked.map((id) => ({ id }))]) {
-      if (!seen.has(c.id)) { seen.add(c.id); merged.push(c.id); }
-    }
+    const fromPhrase = new Set();
+    for (const c of phraseRanked) if (!seen.has(c.id)) { seen.add(c.id); fromPhrase.add(c.id); merged.push(c.id); }
+    for (const id of tokenRanked) if (!seen.has(id)) { seen.add(id); merged.push(id); }
     const sessions = merged.slice(0, limit).map((id) => {
       const s = memoIndex.sessions.get(id);
       let rep = null;
@@ -450,7 +448,7 @@ return {
         time: rep ? rep.time : null,
         seq: rep ? rep.seq : null,
         source: "event",
-        mode: "phrase",
+        mode: fromPhrase.has(id) ? "phrase" : "terms",
       };
       // Evidence: top-3 matching events straight from the index.
       const evHits = [];

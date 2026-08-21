@@ -51,7 +51,7 @@ Memo 刻意不把你的历史重建进自己的索引。如果你需要 DSH 之�
 
 ## 工具
 
-### `memo_search(query, limit?, sessionId?, since?, tags?)`
+### `memo_search(query, limit?, sessionId?, since?, tags?, snippetChars?)`
 
 搜索工作区里所有历史会话 + 备忘笔记。`limit` 默认 10（上限 50）；`sessionId` 限定单个会话；`since` 按 epoch-ms 过滤；`tags` 按标签过滤笔记；`snippetChars` 设定每条片段的字符数（默认 240，钳制在 80-2000）——答案需要更多上下文时调大，上下文预算紧张时调小。这个旋钮归调用方，工具绝不替 agent 擅自加长片段。返回 `{ sessions, notes, limit }`：
 
@@ -73,16 +73,15 @@ Memo 刻意不把你的历史重建进自己的索引。如果你需要 DSH 之�
 
 ```
   memo_search(query)
-   1. 短语步   整句作为一条 FTS5 短语 → top 10 会话
-   2. 加权步   ≤8 词 + 相邻词对，各自 top 10，
-               按 df 代理 IDF 权重合并（词 idf×4、
-               词对长度 × max idf；df 每次查询用
-               capped-50 计数估计，失败回退长度），
-               时间降序 tiebreak——内容词先占满
-               窗口，停用词只填剩余
-   3. 短语在前，再加权结果，去重，取前 10
-                    ── 官方 sessionQuery (FTS5) ──
-        DSH 会话语料（live + persisted 事件）   + notes.jsonl
+   1. 语料切片    只收对话事件（用户消息 / assistant 完整回复 /
+                  压缩摘要 / 会话标题），注入的工作区指令除外
+   2. 倒排索引    token（英文词 + 连续汉字串）→ 位置表，
+                  持久化在 $DSH_HOME/memo/index.json，
+                  开机秒级加载
+   3. 排序        短语优先，再合并加权词/词对（idf×4 词项、
+                  词对长度 × 最大 idf），时间倒序，去重，取前 10
+                     ── 官方 sessionQuery 精确读取接口 ──
+              DSH 会话语料（只读）   + notes.jsonl
 ```
 
 Memo 不建第二份持久库：DSH 的 `sessionQuery` 服务是唯一真相源，通过其精确读取接口访问。每次搜索只花一次 `listSessions`（发现新会话）加内存索引查询——零次 FTS 后端调用（0.12.0；更早版本最多 26 次，见 CHANGELOG）。
@@ -113,7 +112,7 @@ Memo 落在 [《Memory for Large Language Models》](https://arxiv.org/abs/2607.
 
 ## Benchmark
 
-按 `memo_search` 实际发货的管线实测，评测脚本跑在与后端同类的 FTS5 引擎上。完整协议、环境与变体选择实验记录：[`bench/`](../bench/README.md)。
+按 `memo_search` 实际发货的管线实测，评测脚本复刻同一套内存倒排索引与排序（exp6/exp6-m）。完整协议、环境与变体选择实验记录：[`bench/`](../bench/README.md)。
 
 **LongMemEval-S**（[arXiv:2410.10813](https://arxiv.org/abs/2410.10813)，500 个问题，每题 54 个干扰会话）：
 
@@ -142,7 +141,7 @@ S → M 的下降（hit@1 78.2% → 54.6%）与候选池约 10 倍扩大一致�
 
 - 这是会话定位的 hit@k（约 54 / 约 27 个候选会话的池子），不是端到端答题准确率——不可与 Mem0 / Zep / LangMem（LLM reader + judge 管线）比较。
 - 信噪比：S 档随机 hit@1 ≈ 1.9%（1/54）、LoCoMo ≈ 3.7%（1/27）、M 档 ≈ 0.2%（1/500）；Memo 的 78.2% / 60.2% /（M 见下）约为其 41× / 16× / 260×。LoCoMo 的随机 hit@10 已有 ≈37%。
-- 现在我们也在 M 档（约 500 会话池）有了自己的数字：hit@5 76.6%。论文检索表（BM25 R@5 63–68%、Contriever/Stella R@5 72–76%）用 round 级 Recall@k，我们用会话级 hit@k——相近但非同口径，所以**仍不作同等性声明**。Memo 是词法检索这一类里接近天花板的稀疏方案。
+- 现在我们也在 M 档（约 500 会话池）有了自己的数字：hit@5 78.6%。论文检索表（BM25 R@5 63–68%、Contriever/Stella R@5 72–76%）用 round 级 Recall@k，我们用会话级 hit@k——相近但非同口径，所以**仍不作同等性声明**。Memo 是词法检索这一类里接近天花板的稀疏方案。
 - 已知天花板：助手复述类与偏好类是词法地板（S/M 档 hit@1 33.3% / 30.0%）——证据常与问句没有共同词。
 - "词长 ≈ 内容词"的加权规律是英文统计特征，迁移到中文不成立。
 
@@ -161,7 +160,7 @@ S → M 的下降（hit@1 78.2% → 54.6%）与候选池约 10 倍扩大一致�
 ## 环境要求
 
 - **DeepSeek Harness**，composition 里有 `sessionQuery` 服务（标准 `web` profile 自带）；部署的会话查询索引必须开启——索引关闭时 `memo_search` 如实报错而不是瞎猜。
-- **中文 / CJK**：后端 unicode61 索引把连续汉字串存为单个 token。Memo 把这些串作为加权短语搜索（0.7.0），所以只要问句的某个完整串在会话里原文出现就能召回。串内部的字级/词级搜索必须等上游换 tokenizer——`memo_search` 通过 `cjkWarning` 如实说明（详见 [`bench/`](../bench/README.md)）。
+- **中文 / CJK**：Memo 自己的 tokenizer 把连续汉字串存为单个 token，所以只要问句的某个完整串在会话里原文出现就能召回。串内部的字级/词级搜索需要字符级索引——Memo 自己的索引可以做到但尚未发货——`memo_search` 通过 `cjkWarning` 如实说明（详见 [`bench/`](../bench/README.md)）。
 - 笔记需要工具执行时能解析 `$DSH_HOME`。不需要其他服务、不需要 API key、没有任何网络调用。
 
 ## 路线图
@@ -169,7 +168,7 @@ S → M 的下降（hit@1 78.2% → 54.6%）与候选池约 10 倍扩大一致�
 - [x] LoCoMo10 辅测 · LongMemEval-CN 跨语言评测
 - [x] 标签搜索与笔记去重 · 0.5.0 三 bug 修复（内容词优先分词、空 token 笔记泄漏、换行安全追加）
 - [x] 确定性时间感知检索：实测后否决并公开证据
-- [x] LongMemEval-M（500 会话池）规模 / 抗过拟合检验——hit@1 52.6%，题型排序与 S 档一致
+- [x] LongMemEval-M（500 会话池）规模 / 抗过拟合检验——hit@1 54.6%，题型排序与 S 档一致
 - [x] 中文 run 级召回（0.7.0）+ 内置功能回归集（`bench/zh.cjs`，自建、非 benchmark）
 - [ ] 中文会话评测语料（阻塞：公开语料不存在；benchmark 级中文数字需要它）· 串内部字级召回（阻塞：上游 tokenizer 变更）
 - [ ] 端到端 QA（检索 + 答题）——需要模型配额批准

@@ -28,7 +28,6 @@
   "limit": 10
 }
 ```
-
 > Agent: *"Yes — we researched it in the Weniger theme project: 'DESIGN DIETER RAMS' is a registered trademark, so the product was renamed Weniger…"*
 
 ## Install
@@ -47,17 +46,17 @@ The install only mounts the plugin — it does not reconfigure DSH. Memo answers
 - **Nothing else to run.** No vector database, no embedding API, no API keys, no background indexer — it searches the corpus DSH already records, through the official `sessionQuery` backend.
 - **Everything stays local.** Sessions stay in DSH's store; your distilled notes are one human-readable JSONL file.
 
-Memo deliberately does not re-index your history into its own store. If you need cross-app memory outside DSH with embedding-based search, projects like Mem0 or Letta are built for that.
+Memo keeps one lightweight derived index at `$DSH_HOME/memo/index.json` — no second durable store of your history, and DSH's session corpus remains the single source of truth. If you need cross-app memory outside DSH with embedding-based search, projects like Mem0 or Letta are built for that.
 
 ## Tools
 
-### `memo_search(query, limit?, sessionId?, since?, tags?)`
+### `memo_search(query, limit?, sessionId?, since?, tags?, snippetChars?)`
 
-Search every past session in the workspace plus your memo notes. `limit` defaults to 10 (cap 50); `sessionId` restricts to one session; `since` filters by epoch-ms; `tags` filters notes by tag; `snippetChars` sets characters per snippet (default 240, clamped 80-2000) — raise it when the answer needs surrounding context, keep it low when your context budget is tight. The agent owns this knob; the tool never grows snippets by itself. Returns `{ sessions, notes, limit }`:
+Search past sessions in the workspace plus your memo notes (your current conversation is in your context and stays out of the index). `limit` defaults to 10 (cap 50); `sessionId` restricts to one session; `since` filters by epoch-ms; `tags` filters notes by tag; `snippetChars` sets characters per snippet (default 240, clamped 80-2000) — raise it when the answer needs surrounding context, keep it low when your context budget is tight. Returns `{ sessions, notes, limit }`:
 
 - `sessions`: `{ sessionId, title (null when untitled), snippet, time, mode }` — ordered phrase-first, then by weighted token/pair score; `mode` is `"phrase"` (verbatim question hit) or `"terms"`.
 - `notes`: most recent matches, newest last.
-- When the deployment's session-query index is closed or the service is missing, the result carries an `error` string instead of fabricated hits. Chinese queries get run-level recall (contiguous Han runs as weighted phrases) plus a `cjkWarning` describing the remaining limit — see [Requirements](#requirements).
+- While the startup index is still building, results carry an `indexing` progress field; if the build fails, an `error` string instead of fabricated hits. Chinese queries get run-level recall (contiguous Han runs as single tokens) plus a `cjkWarning` describing the remaining limit — see [Requirements](#requirements).
 
 ### `memo_remember(text, tags?)`
 
@@ -73,16 +72,17 @@ Corpus overview, no parameters: `{ sessions: 19, recent: […], notes: 4 }`.
 
 ```
   memo_search(query)
-   1. phrase step    whole query as one FTS5 phrase → top 10 sessions
-   2. weighted step  ≤8 tokens (content words + CJK runs) +
-                     merged by df-proxy IDF weights (term idf×4,
-                     pair length × max idf; df estimated per query
-                     with capped-50 counts, length fallback),
-                     time-desc tiebreak — content words fill the
-                     window first, stopwords only leftovers
-   3. phrase first, then weighted, dedup, top 10
-                    ── official sessionQuery (FTS5) ──
-        DSH session corpus (live + persisted events)   + notes.jsonl
+   1. corpus slice    conversation events only (user/assistant
+                      messages, compaction summaries, titles) —
+                      injected workspace instructions excluded
+   2. inverted index  tokens (ASCII words + Han runs) → postings,
+                      persisted at $DSH_HOME/memo/index.json,
+                      loaded in seconds at boot
+   3. ranking         phrase-first, then weighted token/pair merge
+                      (idf×4 terms, pair length × max idf), time-
+                      desc tiebreak, dedup, top 10
+                     ── official sessionQuery exact-read APIs ──
+              DSH session corpus (read-only)   + notes.jsonl
 ```
 
 Memo does not build a second durable store: DSH's `sessionQuery` service is the single source of truth, read through its exact-read APIs. A search costs one `listSessions` (to spot new sessions) plus in-memory index lookups — zero FTS backend calls (0.12.0; earlier versions made up to 26, see CHANGELOG).
@@ -115,7 +115,7 @@ Memo maps onto the memory taxonomy of [Memory for Large Language Models](https:/
 
 ## Benchmark
 
-Measured under the exact pipeline `memo_search` ships — reproduced in harnesses over the same FTS5 engine class the backend uses. Full protocol, environment, and the variant-selection experiment log: [`bench/`](bench/README.md).
+Measured under the exact pipeline `memo_search` ships — reproduced in harnesses over the same in-memory inverted index and ranking (exp6/exp6-m). Full protocol, environment, and the variant-selection experiment log: [`bench/`](bench/README.md).
 
 **LongMemEval-S** ([arXiv:2410.10813](https://arxiv.org/abs/2410.10813), 500 questions, 54-session haystacks per question):
 
@@ -148,7 +148,7 @@ selected on S and confirmed positive on ALL five 100-question M segments
 
 - Session-localization hit@k (~54 / ~27-session pools), not end-to-end answer accuracy — not comparable to Mem0 / Zep / LangMem (LLM reader + judge pipelines).
 - Signal-to-noise: random hit@1 is ≈1.9% on S (54 sessions), ≈3.7% on LoCoMo (~27), ≈0.2% on M (~500); Memo's 78.2% / 60.2% / (M below) are ≈41× / ≈16× / ≈260× that. LoCoMo's random hit@10 is already ≈37%.
-- On the M scale we now publish our own numbers: hit@5 76.6%. The paper's retrieval table (BM25 R@5 63–68%, Contriever/Stella R@5 72–76%) uses Recall@k over rounds; ours is session hit@k — close but not the same protocol, so **no parity claim**. Memo is a sparse lexical retriever near its class's ceiling.
+- On the M scale we now publish our own numbers: hit@5 78.6%. The paper's retrieval table (BM25 R@5 63–68%, Contriever/Stella R@5 72–76%) uses Recall@k over rounds; ours is session hit@k — close but not the same protocol, so **no parity claim**. Memo is a sparse lexical retriever near its class's ceiling.
 - Known ceilings: assistant-quoted and preference questions are the lexical floor — their evidence often shares no words with the question (33.3% / 30.0% hit@1 on S / M).
 - The length-as-rarity weighting ("long word ≈ content word") is an English statistical regularity; it does not transfer to Chinese.
 
@@ -166,8 +166,8 @@ If you find a number here that doesn't reproduce, that is the highest-value bug 
 
 ## Requirements
 
-- **DeepSeek Harness** with the `sessionQuery` service (shipped in the standard `web` profile); the deployment's session-query index must be open — `memo_search` reports a closed index honestly instead of guessing.
-- **Chinese / CJK**: the backend's unicode61 index stores contiguous Han runs as single tokens. Memo searches those runs as weighted phrases (0.7.0), so a session is found when any run of the query appears verbatim. Word-level search inside a run is impossible without an index-side tokenizer change — `memo_search` says so via `cjkWarning` (details in [`bench/`](bench/README.md)).
+- **DeepSeek Harness** with the `sessionQuery` service (shipped in the standard `web` profile). Memo uses only its exact-read APIs (`listSessions` / `readSession`) and makes zero FTS calls, so no platform search setting is required.
+- **Chinese / CJK**: Memo's own tokenizer indexes contiguous Han runs as single tokens. Memo searches those runs as weighted phrases (0.7.0), so a session is found when any run of the query appears verbatim. Word-level search inside a run would need character-level indexing — possible in Memo's own index but not shipped yet — `memo_search` says so via `cjkWarning` (details in [`bench/`](bench/README.md)).
 - Notes need `$DSH_HOME` resolvable at tool-execution time. No other services, no API keys, no network calls.
 
 ## Roadmap
@@ -175,8 +175,9 @@ If you find a number here that doesn't reproduce, that is the highest-value bug 
 - [x] LoCoMo10 secondary benchmark · LongMemEval-CN cross-lingual benchmark
 - [x] Tag search and note deduplication · 0.5.0 bug fixes (content-word-first tokenization, empty-token note leak, newline-safe append)
 - [x] Deterministic time-aware retrieval tested and rejected with published evidence
-- [x] LongMemEval-M (500-session pools) scale / anti-overfitting check — hit@1 52.6%, type ranking identical to S
+- [x] LongMemEval-M (500-session pools) scale / anti-overfitting check — hit@1 54.6%, type ranking identical to S
 - [x] Chinese run-level recall (0.7.0) + built-in functional regression set (`bench/zh.cjs`, self-built, NOT a benchmark)
+- [x] A-prime engine: zero FTS calls, persisted index, boot-safe (0.12.x) · caller-owned `snippetChars` (0.13.0)
 - [ ] Chinese-session evaluation corpus (blocked: none exists publicly; benchmark-level Chinese numbers need it) · word-level recall inside runs (blocked: upstream tokenizer change)
 - [ ] End-to-end QA (retrieval + answer) — needs model-quota approval
 - [ ] Dense retrieval for the lexical ceiling — deliberately out of scope while "nothing else to run" holds
@@ -199,7 +200,7 @@ domain:     agent memory / session retrieval
 audience:   DSH (DeepSeek Harness) users who want their agent to remember
 interfaces: three model tools — memo_search / memo_remember / memo_stats
 runtime:    DSH host plugin (Node), no extra services, no vector DB
-storage:    the official DSH session corpus + one plain JSONL notes file
+storage:    official DSH session corpus (read-only) + $DSH_HOME/memo/ (index.json + notes.jsonl)
 status:     beta — no breaking API changes inside the 0.x line; see CHANGELOG
 support:    GitHub Issues
 ```

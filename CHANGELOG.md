@@ -4,6 +4,20 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.13.2 — 2026-08-22
+
+- **Full README review (docs-only).** Fixed nine stale/contradictory spots
+  left over from the A-prime migration: the architecture diagram and
+  benchmark protocol line still said FTS5; Requirements still demanded the
+  platform search index be open; "does not re-index" contradicted the
+  persisted index; M numbers quoted 76.6%/52.6% instead of the measured
+  78.6%/54.6%; the CJK limitation was attributed to the backend tokenizer
+  when it is now Memo's own choice; the tools signature missed
+  `snippetChars`; roadmap gained the 0.12.x/0.13.0 items; bench/README and
+  CONTRIBUTING still described the 26-call FTS cost and the FTS-enabling
+  patch. Also fixed: session hits from the weighted step were all labeled
+  `mode: "phrase"` — they are now `"terms"` when the phrase step missed.
+
 ## 0.13.1 — 2026-08-22
 
 - **Tool descriptions reviewed (writing-for-agents).** memo_search states the

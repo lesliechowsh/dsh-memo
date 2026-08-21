@@ -303,13 +303,13 @@ Conclusion recorded here for honesty: deterministic time-aware expansion does
 not pay on top of the 0.5.0 baseline; the paper's gains require index-side
 date indexing and a temporal model, both outside Memo's architecture.
 
-Cost note: the shipped variant issues up to 26 backend queries per
-`memo_search` (8 token-df estimates + 8 tokens + 7 pairs + 3 evidence calls
-for the top-3 hit sessions) instead of 8 — roughly 3× the backend calls of
-0.3.x. The df estimates use capped-50 counts; if they fail, the pipeline
-falls back to length weights. The 3 evidence calls (0.9.0) run strictly
-after ranking and only add per-hit `events` — ranking is untouched, so all
-numbers in this file remain valid for 0.9.0.
+Cost note (historical — the FTS era, 0.3.x-0.11.0): the shipped variant
+issued up to 26 backend queries per `memo_search` (8 token-df estimates + 8
+tokens + 7 pairs + 3 evidence calls) instead of 8. Since 0.12.0 the shipped
+product makes ZERO FTS backend calls — it answers from its own in-memory
+inverted index (built from the official exact-read APIs, persisted at
+`$DSH_HOME/memo/index.json`), and exp6/exp6-m measure that exact engine, so
+the numbers above describe the shipped 0.12+ product.
 
 Latency blind spot (0.11.0, do not regress): these harnesses use an instant
 in-process backend, so they measure recall but NEVER latency. A real
