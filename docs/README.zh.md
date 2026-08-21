@@ -53,7 +53,7 @@ Memo 刻意不把你的历史重建进自己的索引。如果你需要 DSH 之�
 
 ### `memo_search(query, limit?, sessionId?, since?, tags?)`
 
-搜索工作区里所有历史会话 + 备忘笔记。`limit` 默认 10（上限 50）；`sessionId` 限定单个会话；`since` 按 epoch-ms 过滤；`tags` 按标签过滤笔记。返回 `{ sessions, notes, limit }`：
+搜索工作区里所有历史会话 + 备忘笔记。`limit` 默认 10（上限 50）；`sessionId` 限定单个会话；`since` 按 epoch-ms 过滤；`tags` 按标签过滤笔记；`snippetChars` 设定每条片段的字符数（默认 240，钳制在 80-2000）——答案需要更多上下文时调大，上下文预算紧张时调小。这个旋钮归调用方，工具绝不替 agent 擅自加长片段。返回 `{ sessions, notes, limit }`：
 
 - `sessions`：`{ sessionId, title（无标题时为 null）, snippet, time, mode }`——短语命中在前，再按加权词/词对得分排序；`mode` 为 `"phrase"`（原句命中）或 `"terms"`。
 - `notes`：最近的匹配，新的在后。

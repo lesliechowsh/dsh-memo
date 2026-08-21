@@ -359,7 +359,7 @@ exports.apply = function (ctx) {
 
   // The shipped ranking (exp6-validated): phrase-first, then df-proxy IDF
   // weighted merge with exact df from the index, time-desc tiebreak.
-  async function engineSearch(query, limit, sessionId, since) {
+  async function engineSearch(query, limit, sessionId, since, snippetChars) {
     const phraseTokens = seqTokens(String(query));
     if (phraseTokens.length === 0) return { sessions: [] };
     const pool = [];
@@ -455,7 +455,7 @@ exports.apply = function (ctx) {
         // need-supported. Presentation parameters are tuned only by a dogfood
         // TALLY over several real queries ("could the snippet answer it?"),
         // never by n=1. Full-text reading stays with the agent's own tools.
-        snippet: rep ? snippetAround(rep.text, phraseTokens[0], 240) : "",
+        snippet: rep ? snippetAround(rep.text, phraseTokens[0], snippetChars) : "",
         time: rep ? rep.time : null,
         seq: rep ? rep.seq : null,
         source: "event",
@@ -470,7 +470,7 @@ exports.apply = function (ctx) {
         evHits.push(ev);
       }
       evHits.sort((a, b) => (b.occ ?? 0) - (a.occ ?? 0) || a.len - b.len || b.time - a.time);
-      hit.events = evHits.slice(0, 3).map((ev) => ({ snippet: snippetAround(ev.text, phraseTokens[0], 240), time: ev.time, seq: ev.seq }));
+      hit.events = evHits.slice(0, 3).map((ev) => ({ snippet: snippetAround(ev.text, phraseTokens[0], snippetChars), time: ev.time, seq: ev.seq }));
       return hit;
     });
     return { sessions };
@@ -490,6 +490,7 @@ exports.apply = function (ctx) {
         sessionId: { type: "string", description: "Limit the search to this session." },
         since: { type: "number", description: "Only hits after this epoch-ms time." },
         tags: { type: "string", description: "Comma-separated tags; notes must carry at least one to be returned." },
+        snippetChars: { type: "number", description: "Characters per snippet (hit and evidence alike). Default 240, clamped to 80-2000. Raise it when the answer needs more surrounding context; keep it low when your context budget is tight. The agent decides; the tool never grows snippets on its own." },
       },
       required: ["query"],
     },
@@ -498,6 +499,10 @@ exports.apply = function (ctx) {
       const limit = typeof args.limit === "number" ? Math.max(1, Math.min(50, Math.floor(args.limit))) : 10;
       const since = typeof args.since === "number" ? args.since : undefined;
       const sessionId = typeof args.sessionId === "string" && args.sessionId !== "" ? args.sessionId : undefined;
+      // 0.13.0: snippet length is a caller-owned knob with a hard cap, not a
+      // fixed decision by the tool (0.12.2's one-size bump was crude and was
+      // reverted — see CHANGELOG 0.12.3).
+      const snippetChars = typeof args.snippetChars === "number" ? Math.max(80, Math.min(2000, Math.floor(args.snippetChars))) : 240;
       const result = { sessions: [], notes: [], limit };
       try {
         if (memoIndex.sessions.size === 0 && memoIndex.building) {
@@ -509,7 +514,7 @@ exports.apply = function (ctx) {
           });
         }
         await syncNewSessions();
-        const out = await engineSearch(args.query, limit, sessionId, since);
+        const out = await engineSearch(args.query, limit, sessionId, since, snippetChars);
         result.sessions = out.sessions;
         await enrichTitles(result.sessions);
         if (memoIndex.building || (memoIndex.total > 0 && memoIndex.built < memoIndex.total)) {

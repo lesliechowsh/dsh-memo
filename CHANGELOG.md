@@ -4,6 +4,16 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.13.0 — 2026-08-22
+
+- **`snippetChars`: the context knob belongs to the caller.** After the
+  0.12.2 fixed-bump mistake and its 0.12.3 revert, snippet length becomes a
+  `memo_search` parameter — default 240, clamped to 80-2000, applied to hit
+  and evidence snippets alike. The agent decides how much context to pay
+  for; the tool never grows snippets on its own. This is the general shape
+  for agent-facing tools: presentation knobs are caller-owned, bounded, and
+  default to the cheapest setting.
+
 ## 0.12.3 — 2026-08-22
 
 - **Snippet length reverted to 240 (0.12.2's 1000/600 bump rolled back).**

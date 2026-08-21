@@ -53,7 +53,7 @@ Memo deliberately does not re-index your history into its own store. If you need
 
 ### `memo_search(query, limit?, sessionId?, since?, tags?)`
 
-Search every past session in the workspace plus your memo notes. `limit` defaults to 10 (cap 50); `sessionId` restricts to one session; `since` filters by epoch-ms; `tags` filters notes by tag. Returns `{ sessions, notes, limit }`:
+Search every past session in the workspace plus your memo notes. `limit` defaults to 10 (cap 50); `sessionId` restricts to one session; `since` filters by epoch-ms; `tags` filters notes by tag; `snippetChars` sets characters per snippet (default 240, clamped 80-2000) — raise it when the answer needs surrounding context, keep it low when your context budget is tight. The agent owns this knob; the tool never grows snippets by itself. Returns `{ sessions, notes, limit }`:
 
 - `sessions`: `{ sessionId, title (null when untitled), snippet, time, mode }` — ordered phrase-first, then by weighted token/pair score; `mode` is `"phrase"` (verbatim question hit) or `"terms"`.
 - `notes`: most recent matches, newest last.

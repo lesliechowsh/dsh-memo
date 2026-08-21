@@ -1,9 +1,7 @@
 // Memo (dsh-memo) — host-side dynamic plugin, canonical development form.
 // Behavioral mirror of index.js (the npm form) — keep both in sync.
-// 0.12.x: A-prime engine — process-local inverted index over conversation
-// events read via the official exact-read APIs; NO FTS calls. The dynamic
-// sandbox has no `process`, so the persistence layer self-disables here
-// (in-memory only) — the npm form is the shipping path.
+// 0.13.0: snippet length is a caller-owned knob (snippetChars, 80-2000,
+// default 240) — the tool never decides context size for the agent.
 return {
   apply(ctx) {
     const sessionQuery = ctx.get('sessionQuery')
@@ -352,7 +350,7 @@ return {
 
   // The shipped ranking (exp6-validated): phrase-first, then df-proxy IDF
   // weighted merge with exact df from the index, time-desc tiebreak.
-  async function engineSearch(query, limit, sessionId, since) {
+  async function engineSearch(query, limit, sessionId, since, snippetChars) {
     const phraseTokens = seqTokens(String(query));
     if (phraseTokens.length === 0) return { sessions: [] };
     const pool = [];
@@ -448,7 +446,7 @@ return {
         // need-supported. Presentation parameters are tuned only by a dogfood
         // TALLY over several real queries ("could the snippet answer it?"),
         // never by n=1. Full-text reading stays with the agent's own tools.
-        snippet: rep ? snippetAround(rep.text, phraseTokens[0], 240) : "",
+        snippet: rep ? snippetAround(rep.text, phraseTokens[0], snippetChars) : "",
         time: rep ? rep.time : null,
         seq: rep ? rep.seq : null,
         source: "event",
@@ -463,7 +461,7 @@ return {
         evHits.push(ev);
       }
       evHits.sort((a, b) => (b.occ ?? 0) - (a.occ ?? 0) || a.len - b.len || b.time - a.time);
-      hit.events = evHits.slice(0, 3).map((ev) => ({ snippet: snippetAround(ev.text, phraseTokens[0], 240), time: ev.time, seq: ev.seq }));
+      hit.events = evHits.slice(0, 3).map((ev) => ({ snippet: snippetAround(ev.text, phraseTokens[0], snippetChars), time: ev.time, seq: ev.seq }));
       return hit;
     });
     return { sessions };
@@ -483,6 +481,7 @@ return {
         sessionId: { type: "string", description: "Limit the search to this session." },
         since: { type: "number", description: "Only hits after this epoch-ms time." },
         tags: { type: "string", description: "Comma-separated tags; notes must carry at least one to be returned." },
+        snippetChars: { type: "number", description: "Characters per snippet (hit and evidence alike). Default 240, clamped to 80-2000. Raise it when the answer needs more surrounding context; keep it low when your context budget is tight. The agent decides; the tool never grows snippets on its own." },
       },
       required: ["query"],
     },
@@ -491,6 +490,10 @@ return {
       const limit = typeof args.limit === "number" ? Math.max(1, Math.min(50, Math.floor(args.limit))) : 10;
       const since = typeof args.since === "number" ? args.since : undefined;
       const sessionId = typeof args.sessionId === "string" && args.sessionId !== "" ? args.sessionId : undefined;
+      // 0.13.0: snippet length is a caller-owned knob with a hard cap, not a
+      // fixed decision by the tool (0.12.2's one-size bump was crude and was
+      // reverted — see CHANGELOG 0.12.3).
+      const snippetChars = typeof args.snippetChars === "number" ? Math.max(80, Math.min(2000, Math.floor(args.snippetChars))) : 240;
       const result = { sessions: [], notes: [], limit };
       try {
         if (memoIndex.sessions.size === 0 && memoIndex.building) {
@@ -502,7 +505,7 @@ return {
           });
         }
         await syncNewSessions();
-        const out = await engineSearch(args.query, limit, sessionId, since);
+        const out = await engineSearch(args.query, limit, sessionId, since, snippetChars);
         result.sessions = out.sessions;
         await enrichTitles(result.sessions);
         if (memoIndex.building || (memoIndex.total > 0 && memoIndex.built < memoIndex.total)) {
