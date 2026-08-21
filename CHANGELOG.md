@@ -4,6 +4,16 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.13.1 — 2026-08-22
+
+- **Tool descriptions reviewed (writing-for-agents).** memo_search states the
+  index boundary ("your current conversation is in your context and stays out
+  of the index"), limit becomes "max session hits" (the old "per source" was
+  wrong), snippetChars tightens to one line. memo_remember now states its
+  one indispensable job — a fact or decision made in this conversation that
+  must survive (the only immediate channel) — instead of a generic facts
+  list. No behavior changes.
+
 ## 0.13.0 — 2026-08-22
 
 - **`snippetChars`: the context knob belongs to the caller.** After the

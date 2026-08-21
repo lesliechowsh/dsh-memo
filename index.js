@@ -481,16 +481,16 @@ exports.apply = function (ctx) {
 
   ctx.tools.register({
     name: "memo_search",
-    description: "Search every past session in this workspace plus your memo notes. Use it whenever answering depends on what was said, decided, or built in any earlier session.",
+    description: "Search past sessions in this workspace plus your memo notes. Use whenever answering depends on what was said, decided, or built in earlier sessions. Your current conversation is in your context and stays out of the index.",
     parameters: {
       type: "object",
       properties: {
         query: { type: "string", description: "Search terms; matched against session text and memo notes." },
-        limit: { type: "number", description: "Max hits per source. Default 10, cap 50." },
-        sessionId: { type: "string", description: "Limit the search to this session." },
+        limit: { type: "number", description: "Max session hits. Default 10, cap 50." },
+        sessionId: { type: "string", description: "Limit the search to one session." },
         since: { type: "number", description: "Only hits after this epoch-ms time." },
         tags: { type: "string", description: "Comma-separated tags; notes must carry at least one to be returned." },
-        snippetChars: { type: "number", description: "Characters per snippet (hit and evidence alike). Default 240, clamped to 80-2000. Raise it when the answer needs more surrounding context; keep it low when your context budget is tight. The agent decides; the tool never grows snippets on its own." },
+        snippetChars: { type: "number", description: "Chars per snippet. Default 240, clamped 80-2000; raise for surrounding context, lower to save tokens." },
       },
       required: ["query"],
     },
@@ -541,11 +541,11 @@ exports.apply = function (ctx) {
 
   ctx.tools.register({
     name: "memo_remember",
-    description: "Write one durable note to the memo store. Use for facts, decisions, preferences, and conventions that must survive across sessions; memo_search returns these notes.",
+    description: "Write one durable note. Use when a fact or decision made in this conversation must survive into later sessions — the current conversation stays out of the search index, so this is the only immediate channel. Found later via memo_search.",
     parameters: {
       type: "object",
       properties: {
-        text: { type: "string", description: "The note — one concrete fact, decision, or preference." },
+        text: { type: "string", description: "The note — one concrete fact or decision." },
         tags: { type: "string", description: "Comma-separated tags." },
       },
       required: ["text"],
