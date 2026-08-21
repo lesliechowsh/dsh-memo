@@ -316,7 +316,26 @@ in-process backend, so they measure recall but NEVER latency. A real
 deployment measurement found DSH's session-query backend reconciles its
 entire live corpus on every call (35-47 s/call on a phone-class device,
 query-independent) — the shipped 27-call pipeline froze the host for
-minutes. The shipped plugin now degrades defensively under a slow backend
-(0.11.0); the ranking path these numbers measure is the full pipeline and
-runs unchanged on healthy backends. The real-deployment smoke test must
-include a latency check from now on.
+minutes. Resolution (0.12.0): memo_search no longer calls FTS at all; it
+reads the corpus via the official exact-read APIs and answers from a
+process-local inverted index. exp6.cjs / exp6-m.cjs measure that scan path:
+LongMemEval-S hit@1 78.2% · hit@5 92.4% · MRR 0.8469 (exp6, 500 questions)
+and LongMemEval-M five 100-question segments 54.6% · 78.6% · MRR 0.6457 —
+numerically equal to the FTS-era run.cjs/run-m.cjs numbers (the ranking is
+identical; only the lookup structure changed). The real-deployment smoke
+test must include a latency check from now on.
+
+EXP6 results (2026-08-21, scan path):
+
+| Harness | hit@1 | hit@5 | hit@10 | MRR |
+|---|---|---|---|---|
+| exp6.cjs (S, 500 q) | 78.2% | 92.4% | 97.4% | 0.8469 |
+| exp6-m.cjs seg 1 (q 1-100) | 52.0% | 80.0% | 87.0% | 0.6261 |
+| exp6-m.cjs seg 2 (q 101-200) | 61.0% | 87.0% | 91.0% | 0.7223 |
+| exp6-m.cjs seg 3 (q 201-300) | 73.0% | 90.0% | 93.0% | 0.8013 |
+| exp6-m.cjs seg 4 (q 301-400) | 55.0% | 77.0% | 83.0% | 0.6489 |
+| exp6-m.cjs seg 5 (q 401-500) | 32.0% | 59.0% | 65.0% | 0.4299 |
+| exp6-m.cjs total (500 q) | 54.6% | 78.6% | — | 0.6457 |
+
+Segment 5's weakness matches the FTS-era segment 5 exactly (32.0/59.0/65.0
+/0.4299 in both) — question-mix difficulty, not a scan-path regression.

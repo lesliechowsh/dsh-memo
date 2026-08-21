@@ -95,7 +95,7 @@ Corpus overview, no parameters: `{ sessions: 19, recent: […], notes: 4 }`.
         DSH session corpus (live + persisted events)   + notes.jsonl
 ```
 
-Memo re-indexes nothing: DSH's `sessionQuery` service is the single source of truth. A search costs up to 26 backend calls (8 extra for the df estimates, 3 for the multi-snippet evidence below).
+Memo does not build a second durable store: DSH's `sessionQuery` service is the single source of truth, read through its exact-read APIs. A search costs one `listSessions` (to spot new sessions) plus in-memory index lookups — zero FTS backend calls (0.12.0; earlier versions made up to 26, see CHANGELOG).
 
 ## Usage
 
@@ -117,7 +117,10 @@ The agent reaches for `memo_search` by itself when the answer depends on history
 
 ### When the backend is slow
 
-On a healthy deployment the full pipeline runs: phrase step, weighted step with df-proxy IDF, and multi-snippet evidence. DSH's session-query backend reconciles its whole live corpus on every call — normally fast, but on a slow machine a single call can take tens of seconds. Memo guards against that: if the first backend call exceeds 4 seconds, the weighted step and evidence are skipped (phrase results only) and the next few minutes of searches skip the session side entirely. Every such result carries a `degraded` field explaining what happened, and notes search is unaffected. This is defensive degradation, not a benchmark change — the published numbers are measured on the full pipeline.
+DSH's session-query FTS backend reconciles its whole live corpus on every call — on slow machines a single call can take tens of seconds. Memo does not use that path for search: it reads the corpus once at startup through the official exact-read APIs (fast, no reconcile) and answers from an in-memory index over the conversation events. Two consequences, both by design:
+
+- The index covers user and assistant messages, compaction summaries, and session titles — the authoritative conversation record (source-verified: streaming chunks and tool machinery, ~93% of raw bytes, are folded into or superseded by the indexed events). Searches during the startup build return partial results with an `indexing` progress field.
+- Freshness is minutes-stale by design: new sessions are indexed once they appear in the session list; a session that grew is re-read at the next restart. Notes search is unaffected and always current.
 
 ## Design & research grounding
 

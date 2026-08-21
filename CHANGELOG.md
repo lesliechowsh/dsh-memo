@@ -4,6 +4,32 @@ All notable changes to dsh-memo. Versions follow the npm release
 history; benchmark numbers are measured on [LongMemEval-S and
 LoCoMo10](bench/README.md) with the harnesses in this repo.
 
+## 0.12.0 — 2026-08-21
+
+- **A-prime engine: session search without FTS calls.** The FTS backend
+  reconciles the whole live corpus on every call (measured 35-47 s/call on
+  this phone-class deployment, query-independent), which made the FTS path
+  unusable regardless of call count. memo_search now reads the corpus
+  through the official exact-read APIs (listSessions/readSession — the
+  backend-independent tier, 85-527 ms per session read) and answers from a
+  process-local inverted index over conversation events. Corpus slice
+  (measured on a 27-session / 527 MB deployment): 90.5% of bytes are
+  assistant/chunk streaming deltas and ~3% tool machinery; the indexed
+  slice is user/message + assistant/message + compaction/summary +
+  session/title (~29 MB). Source-verified in dsh-agent-loop that every
+  chunk folds into its assistant/message (sourceEventSeqs), so nothing is
+  lost. Ranking unchanged and validated by exp6/exp6-m: LongMemEval-S
+  hit@1 78.2% · hit@5 92.4% · MRR 0.8469; LongMemEval-M five segments
+  54.6% · 78.6% · 0.6457 — numerically equal to the FTS-era numbers.
+  Freshness (deliberate, per maintainer practice — search targets
+  cross-session older content): the index builds once at startup in the
+  background (results during the build disclose `indexing` progress), new
+  sessions are indexed lazily once they appear in listSessions, and
+  sessions that grew are re-read at restart. The 0.11.0 latency guard is
+  retired with the FTS path (no FTS calls remain).
+- **exp6.cjs / exp6-m.cjs published** — scan-path harnesses behind the
+  S/M numbers above.
+
 ## 0.11.0 — 2026-08-21
 
 - **Adaptive latency guard.** Measured on a real deployment with a timing

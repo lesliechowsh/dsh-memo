@@ -118,21 +118,6 @@ exports.apply = function (ctx) {
     return textOk;
   }
 
-  // 0.11.0: adaptive latency guard. The session-query backend runs a full
-  // live-corpus reconcile on EVERY search call (observed 35-47s per call on
-  // a phone-class device, independent of the query), so a 27-call search can
-  // freeze the host for minutes. Guard: time the first (phrase) call; if it
-  // is slow, cache a "slow backend" verdict for SLOW_TTL_MS, return the
-  // phrase results only, and skip session search entirely on repeat calls
-  // inside the window. Every backend call also runs against a total time
-  // budget. On a healthy backend the full pipeline runs unchanged
-  // (benchmark parity); degradation is disclosed in the result.
-  const SLOW_MS = 4000;
-  const BUDGET_MS = 10000;
-  const SLOW_TTL_MS = 5 * 60 * 1000;
-  let slowUntil = 0;
-  let searchT0 = 0;
-
   const textOutput = () => ({
     schema: { type: "object", additionalProperties: true },
     render(args, value) {
@@ -157,93 +142,285 @@ exports.apply = function (ctx) {
     } catch (err) { /* titles optional */ }
   }
 
-  async function phraseSearch(query, limit, sessionId, since) {
-    if (sessionId !== undefined) {
-      const page = await ctx.sessionQuery.searchEvents({
-        sessionId,
-        query: String(query),
-        limit,
-        ...(since !== undefined ? { filters: [{ kind: "time", from: since }] } : {}),
-      });
-      return (page.items || []).map((hit) => ({ sessionId, title: null, snippet: hit.snippet ?? "", time: hit.time ?? null, seq: hit.seq ?? null, source: "event", mode: "phrase" }));
+  // ---------- A-prime engine (0.12.0) ----------
+  // Process-local inverted index over conversation events, read through the
+  // official exact-read APIs (listSessions/readSession — the backend-
+  // independent tier that does NOT trigger the FTS reconcile; measured
+  // 35-47 s per FTS call on this device class vs 85-527 ms per readSession).
+  // Corpus slice (measured on a 27-session / 527 MB deployment): 90.5% of
+  // bytes are assistant/chunk streaming deltas, ~3% tool machinery; the
+  // authoritative conversation record is assistant/message + user/message
+  // (~29 MB). Source-verified in dsh-agent-loop: every chunk is folded into
+  // the final assistant/message (sourceEventSeqs), so skipping chunks loses
+  // nothing. Freshness (user decision): search targets cross-session, older
+  // content — build once at startup in the background, searches during the
+  // build see the partial index (disclosed via `indexing`), new sessions
+  // are indexed lazily once they appear in listSessions, grown sessions are
+  // re-read only at restart. No FTS calls at all.
+  const INDEXED_TYPES = new Set(["user/message", "assistant/message", "compaction/summary", "session/title"]);
+
+  function seqTokens(text) {
+    const out = [];
+    for (const m of String(text).toLowerCase().matchAll(/[a-z0-9]+|\p{Script=Han}+/gu)) {
+      if (m[0].length >= 1) out.push(m[0]);
     }
-    const page = await ctx.sessionQuery.searchSessions({
-      query: String(query),
-      limit,
-      ...(since !== undefined ? { eventFilters: [{ kind: "time", from: since }] } : {}),
-    });
-    return (page.items || []).map((hit) => {
-      const bm = hit.bestMatch || {};
-      return { sessionId: (hit.header && hit.header.id) ?? null, title: null, snippet: bm.snippet ?? "", time: bm.time ?? null, seq: bm.seq ?? null, source: "event", mode: "phrase" };
-    });
+    return out;
   }
 
-  async function tokenizedSearch(query, limit, since, guard) {
-    const tokens = tokenize(query);
-    if (tokens.length <= 1) return [];
-    // 0.8.0: df-proxy IDF weights. One extra capped call per term (limit 50,
-    // count returned items) estimates document frequency; idf =
-    // log((N+1)/(1+min(df,50))) with N = listSessions count. Term weight =
-    // 4*idf; pair weight = pair length * max(idf of its terms). Falls back
-    // to plain length weights when estimation fails. Cost: up to 8 extra
-    // backend calls per search (23 vs 15) — disclosed in the README.
-    let idfReady = false;
-    let idfValues = null;
-    const ensureIdf = async () => {
-      if (idfReady) return;
-      idfReady = true;
-      const cache = new Map();
-      try {
-        const sessions = await ctx.sessionQuery.listSessions();
-        const n = sessions.length;
-        for (const t of tokens) {
-          const page = await ctx.sessionQuery.searchSessions({ query: t, limit: 50 });
-          const df = Math.min((page.items || []).length, 50);
-          cache.set(t, Math.log((n + 1) / (1 + df)));
-        }
-        idfValues = cache;
-      } catch (err) { idfValues = null; }
-    };
-    // Phrase list: each token, then each consecutive token pair.
-    const phrases = [];
-    for (const t of tokens) phrases.push([t, t.length]);
-    for (let i = 0; i + 1 < tokens.length; i++) {
-      const pair = tokens[i] + " " + tokens[i + 1];
-      phrases.push([pair, pair.length]);
+  function occurrencesIn(t, p) {
+    if (p.length === 0) return 0;
+    let n = 0;
+    outer: for (let i = 0; i + p.length <= t.length; i++) {
+      for (let j = 0; j < p.length; j++) if (t[i + j] !== p[j]) continue outer;
+      n++;
     }
-    const collected = new Map();
-    for (const [phrase, lenWeight] of phrases) {
-      if (guard !== undefined && !guard.tick()) { guard.skipped += 1; break; }
-      const pts = phrase.split(" ");
-      const isPair = pts.length === 2;
-      await ensureIdf();
-      let weight = lenWeight;
-      if (idfValues !== null) {
-        const a = idfValues.get(pts[0]);
-        const b = isPair ? idfValues.get(pts[1]) : undefined;
-        if (a !== undefined && (!isPair || b !== undefined)) {
-          weight = isPair ? lenWeight * Math.max(a, b) : 4 * a;
-        }
-      }
-      let page;
-      try {
-        page = await ctx.sessionQuery.searchSessions({
-          query: phrase,
-          limit: Math.max(limit, 8),
-          ...(since !== undefined ? { eventFilters: [{ kind: "time", from: since }] } : {}),
-        });
-      } catch (err) { continue; }
-      for (const hit of page.items || []) {
-        const id = (hit.header && hit.header.id) ? String(hit.header.id) : "";
-        if (id === "") continue;
-        const bm = hit.bestMatch || {};
-        const cur = collected.get(id);
-        if (cur !== undefined) cur.count += weight;
-        else collected.set(id, { sessionId: id, title: null, snippet: bm.snippet ?? "", time: bm.time ?? null, seq: bm.seq ?? null, source: "event", mode: "terms", count: weight });
-      }
-    }
-    return [...collected.values()].sort((a, b) => (b.count - a.count) || ((b.time ?? 0) - (a.time ?? 0))).slice(0, limit);
+    return n;
   }
+
+  // Searchable text of one indexed event. Message content is a block list;
+  // text blocks carry the prose (tool-call blocks are machinery).
+  function eventText(ev) {
+    const data = ev && ev.data;
+    if (data === undefined || data === null) return "";
+    if (ev.type === "session/title") {
+      const t = data.title ?? data.text;
+      return typeof t === "string" ? t : "";
+    }
+    if (ev.type === "compaction/summary") {
+      const t = data.summary ?? data.text;
+      return typeof t === "string" ? t : "";
+    }
+    const message = data.message ?? data;
+    const content = message && message.content;
+    if (typeof content === "string") return content;
+    if (!Array.isArray(content)) return "";
+    const parts = [];
+    for (const block of content) {
+      if (block && block.type === "text" && typeof block.text === "string") parts.push(block.text);
+    }
+    return parts.join("\n");
+  }
+
+  function snippetAround(text, firstToken, width) {
+    const t = String(text);
+    if (t.length <= width) return t;
+    const at = firstToken === undefined ? -1 : t.toLowerCase().indexOf(String(firstToken).toLowerCase());
+    if (at < 0) return t.slice(0, width);
+    const start = Math.max(0, at - Math.floor(width / 3));
+    return t.slice(start, start + width);
+  }
+
+  function rankCmp(a, b) {
+    return b.occ - a.occ || a.len - b.len || b.time - a.time ||
+      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) || b.seq - b.seq;
+  }
+
+  // index = { sessions: Map(id -> { events: [{text, tokens, len, time, seq, type}], inverted: Map(token -> number[]) }) }
+  const memoIndex = { sessions: new Map(), building: false, built: 0, total: 0, startedAt: 0 };
+
+  function indexSession(id, snap) {
+    const events = [];
+    const inverted = new Map();
+    for (const ev of (snap && snap.events) || []) {
+      if (!INDEXED_TYPES.has(String(ev.type))) continue;
+      const text = eventText(ev);
+      if (text === "") continue;
+      const tokens = seqTokens(text);
+      if (tokens.length === 0) continue;
+      const k = events.length;
+      events.push({ text, tokens, len: Array.from(text).length, time: Number(ev.time) || 0, seq: Number(ev.seq) || 0, type: String(ev.type) });
+      for (const t of new Set(tokens)) {
+        let arr = inverted.get(t);
+        if (arr === undefined) { arr = []; inverted.set(t, arr); }
+        arr.push(k);
+      }
+    }
+    memoIndex.sessions.set(String(id), { events, inverted });
+  }
+
+  async function buildIndexAll() {
+    if (memoIndex.building) return;
+    memoIndex.building = true;
+    memoIndex.startedAt = Date.now();
+    try {
+      const records = await ctx.sessionQuery.listSessions();
+      memoIndex.total = records.length;
+      for (const rec of records) {
+        const id = (rec.header && rec.header.id) ?? null;
+        if (id === null) continue;
+        try {
+          indexSession(String(id), await ctx.sessionQuery.readSession(String(id)));
+        } catch (err) { /* skip unreadable session */ }
+        memoIndex.built += 1;
+      }
+    } finally {
+      memoIndex.building = false;
+    }
+  }
+
+  // Lazily index sessions that appeared after the build; cheap id-diff via
+  // listSessions (no FTS, no reconcile).
+  async function syncNewSessions() {
+    if (memoIndex.building) return;
+    let records;
+    try { records = await ctx.sessionQuery.listSessions(); } catch (err) { return; }
+    const fresh = records.filter((r) => {
+      const id = (r.header && r.header.id) ?? null;
+      return id !== null && !memoIndex.sessions.has(String(id));
+    });
+    for (const rec of fresh) {
+      const id = String(rec.header.id);
+      try { indexSession(id, await ctx.sessionQuery.readSession(id)); } catch (err) { /* skip */ }
+      memoIndex.built += 1;
+      memoIndex.total += 1;
+    }
+  }
+
+  // Sessions whose representative event matches the token sequence.
+  function matchingSessions(phraseTokens) {
+    if (phraseTokens.length === 0) return [];
+    const out = [];
+    for (const [id, s] of memoIndex.sessions) {
+      const evs = s.inverted.get(phraseTokens[0]);
+      if (evs === undefined) continue;
+      let best = null;
+      for (const k of evs) {
+        const ev = s.events[k];
+        let occ;
+        if (phraseTokens.length === 1) {
+          occ = 0;
+          for (const t of ev.tokens) if (t === phraseTokens[0]) occ++;
+        } else {
+          occ = occurrencesIn(ev.tokens, phraseTokens);
+        }
+        if (occ === 0) continue;
+        if (best === null || occ > best.occ || (occ === best.occ && (ev.len < best.len ||
+          (ev.len === best.len && (ev.time > best.time || (ev.time === best.time && ev.seq > best.seq)))))) {
+          best = { occ, len: ev.len, time: ev.time, seq: ev.seq };
+        }
+      }
+      if (best !== null) out.push({ id, occ: best.occ, len: best.len, time: best.time, seq: best.seq });
+    }
+    return out;
+  }
+
+  // The shipped ranking (exp6-validated): phrase-first, then df-proxy IDF
+  // weighted merge with exact df from the index, time-desc tiebreak.
+  async function engineSearch(query, limit, sessionId, since) {
+    const phraseTokens = seqTokens(String(query));
+    if (phraseTokens.length === 0) return { sessions: [] };
+    const pool = [];
+    for (const [id, s] of memoIndex.sessions) {
+      if (sessionId !== undefined && id !== String(sessionId)) continue;
+      pool.push([id, s]);
+    }
+    const scopedIndex = {
+      sessions: new Map(pool),
+      matching(phraseTokens2) {
+        if (phraseTokens2.length === 0) return [];
+        const out = [];
+        for (const [id, s] of pool) {
+          const evs = s.inverted.get(phraseTokens2[0]);
+          if (evs === undefined) continue;
+          let best = null;
+          for (const k of evs) {
+            const ev = s.events[k];
+            if (since !== undefined && ev.time < since) continue;
+            let occ;
+            if (phraseTokens2.length === 1) {
+              occ = 0;
+              for (const t of ev.tokens) if (t === phraseTokens2[0]) occ++;
+            } else {
+              occ = occurrencesIn(ev.tokens, phraseTokens2);
+            }
+            if (occ === 0) continue;
+            if (best === null || occ > best.occ || (occ === best.occ && (ev.len < best.len ||
+              (ev.len === best.len && (ev.time > best.time || (ev.time === best.time && ev.seq > best.seq)))))) {
+              best = { occ, len: ev.len, time: ev.time, seq: ev.seq };
+            }
+          }
+          if (best !== null) out.push({ id, occ: best.occ, len: best.len, time: best.time, seq: best.seq });
+        }
+        return out;
+      },
+      df(term) {
+        let n = 0;
+        for (const [, s] of pool) if (s.inverted.has(term)) n++;
+        return n;
+      },
+    };
+    const phraseRanked = scopedIndex.matching(phraseTokens).sort(rankCmp).slice(0, limit);
+    const tokens = tokenize(String(query));
+    const counts = new Map();
+    const repTimes = new Map();
+    if (tokens.length > 1) {
+      const termLimit = Math.max(limit, 8);
+      const phrases = [];
+      for (const t of tokens) phrases.push([t, t.length]);
+      for (let i = 0; i + 1 < tokens.length; i++) {
+        phrases.push([tokens[i] + " " + tokens[i + 1], (tokens[i] + " " + tokens[i + 1]).length]);
+      }
+      const N = pool.length;
+      const idfOf = (term) => Math.log((N + 1) / (1 + Math.min(scopedIndex.df(term), 50)));
+      for (const [phrase, lenWeight] of phrases) {
+        const pts = phrase.split(" ");
+        const isPair = pts.length === 2;
+        const weight = isPair ? lenWeight * Math.max(idfOf(pts[0]), idfOf(pts[1])) : 4 * idfOf(pts[0]);
+        for (const c of scopedIndex.matching(pts).sort(rankCmp).slice(0, termLimit)) {
+          if (counts.has(c.id)) counts.set(c.id, counts.get(c.id) + weight);
+          else { counts.set(c.id, weight); repTimes.set(c.id, c.time); }
+        }
+      }
+    }
+    const tokenRanked = [...counts.keys()]
+      .sort((a, b) => (counts.get(b) - counts.get(a)) || (repTimes.get(b) - repTimes.get(a)))
+      .slice(0, limit);
+    const merged = [];
+    const seen = new Set();
+    for (const c of [...phraseRanked, ...tokenRanked.map((id) => ({ id }))]) {
+      if (!seen.has(c.id)) { seen.add(c.id); merged.push(c.id); }
+    }
+    const sessions = merged.slice(0, limit).map((id) => {
+      const s = memoIndex.sessions.get(id);
+      const rep = (() => {
+        let best = null;
+        for (const k of s.inverted.get(phraseTokens[0]) || []) {
+          const ev = s.events[k];
+          const occ = occurrencesIn(ev.tokens, phraseTokens);
+          if (occ === 0) continue;
+          if (best === null || occ > best.occ || (occ === best.occ && (ev.len < best.len ||
+            (ev.len === best.len && (ev.time > best.time || (ev.time === best.time && ev.seq > best.seq)))))) {
+            best = { ...ev, occ };
+          }
+        }
+        return best;
+      })();
+      const hit = {
+        sessionId: id,
+        title: null,
+        snippet: rep ? snippetAround(rep.text, phraseTokens[0], 240) : "",
+        time: rep ? rep.time : null,
+        seq: rep ? rep.seq : null,
+        source: "event",
+        mode: "phrase",
+      };
+      // Evidence: top-3 matching events straight from the index (no FTS).
+      const evHits = [];
+      for (const k of s.inverted.get(phraseTokens[0]) || []) {
+        const ev = s.events[k];
+        if (since !== undefined && ev.time < since) continue;
+        if (occurrencesIn(ev.tokens, phraseTokens) === 0 && !(phraseTokens.length === 1 && ev.tokens.includes(phraseTokens[0]))) continue;
+        evHits.push(ev);
+      }
+      evHits.sort((a, b) => (b.occ ?? 0) - (a.occ ?? 0) || a.len - b.len || b.time - a.time);
+      hit.events = evHits.slice(0, 3).map((ev) => ({ snippet: snippetAround(ev.text, phraseTokens[0], 240), time: ev.time, seq: ev.seq }));
+      return hit;
+    });
+    return { sessions };
+  }
+
+  // Kick off the background build once, at plugin start.
+  const buildPromise = buildIndexAll().catch(() => {});
 
   ctx.tools.register({
     name: "memo_search",
@@ -265,73 +442,27 @@ exports.apply = function (ctx) {
       const since = typeof args.since === "number" ? args.since : undefined;
       const sessionId = typeof args.sessionId === "string" && args.sessionId !== "" ? args.sessionId : undefined;
       const result = { sessions: [], notes: [], limit };
-      searchT0 = Date.now();
-      if (Date.now() < slowUntil) {
-        // Recent measurement already marked this deployment's backend slow;
-        // skip the session side entirely instead of freezing the host again.
-        result.degraded = {
-          reason: "session search skipped: this deployment's session-query backend was measured slow on a recent call (per-call corpus reconcile); it re-enables automatically",
-          slowUntil,
-        };
-      } else {
       try {
-        const t0 = Date.now();
-        const phrase = await phraseSearch(args.query, limit, sessionId, since);
-        const phraseMs = Date.now() - t0;
-        const slow = phraseMs > SLOW_MS;
-        if (slow) slowUntil = Date.now() + SLOW_TTL_MS;
-        const merged = [];
-        const seen = new Set();
-        for (const hit of phrase) {
-          if (hit.sessionId === null || hit.sessionId === undefined) continue;
-          seen.add(String(hit.sessionId));
-          merged.push(hit);
+        if (memoIndex.sessions.size === 0 && memoIndex.building) {
+          // First build still running: wait for at least some coverage, then
+          // search the partial index and disclose progress.
+          await new Promise((resolve) => {
+            const check = () => (memoIndex.built > 0 || !memoIndex.building) ? resolve() : setTimeout(check, 200);
+            check();
+          });
         }
-        const guard = { tick: () => Date.now() - searchT0 < BUDGET_MS, skipped: 0 };
-        if (sessionId === undefined && !slow) {
-          for (const hit of await tokenizedSearch(args.query, limit, since, guard)) {
-            if (!seen.has(String(hit.sessionId))) {
-              seen.add(String(hit.sessionId));
-              merged.push(hit);
-            }
-          }
-        }
-        result.sessions = merged.slice(0, limit);
+        await syncNewSessions();
+        const out = await engineSearch(args.query, limit, sessionId, since);
+        result.sessions = out.sessions;
         await enrichTitles(result.sessions);
-        // 0.9.0: multi-snippet evidence. The top-3 hit sessions each get up
-        // to 3 matching events via searchEvents, so the agent can read the
-        // actual passage instead of one bestMatch line. Pure post-ranking
-        // enrichment — the ranking path above is untouched, so all published
-        // benchmark numbers stay valid. Cost: +3 backend calls (one per top
-        // session), skipped for sessionId-scoped searches where the events
-        // are already the result rows. 0.11.0: each call also checks the
-        // time budget.
-        if (sessionId === undefined && !slow && guard.tick() && result.sessions.length > 0) {
-          const targets = result.sessions.slice(0, 3);
-          const settled = await Promise.allSettled(targets.map(async (hit) => {
-            if (!guard.tick()) return [];
-            const page = await ctx.sessionQuery.searchEvents({
-              sessionId: String(hit.sessionId),
-              query: String(args.query),
-              limit: 3,
-              ...(since !== undefined ? { filters: [{ kind: "time", from: since }] } : {}),
-            });
-            return (page.items || []).map((e) => ({ snippet: e.snippet ?? "", time: e.time ?? null, seq: e.seq ?? null }));
-          }));
-          settled.forEach((p, i) => { if (p.status === "fulfilled") targets[i].events = p.value; });
+        if (memoIndex.building || (memoIndex.total > 0 && memoIndex.built < memoIndex.total)) {
+          result.indexing = { indexed: memoIndex.built, total: memoIndex.total, note: "background build in progress; results cover indexed sessions so far" };
         }
-        if (slow || guard.skipped > 0) {
-          result.degraded = {
-            reason: slow
-              ? "slow backend: the first backend call took " + phraseMs + "ms (per-call corpus reconcile); weighted step and evidence skipped, phrase results only; further session searches are skipped for a few minutes"
-              : "backend time budget exhausted; weighted step truncated",
-            phraseMs: slow ? phraseMs : undefined,
-            skippedWeighted: guard.skipped > 0 ? guard.skipped : undefined,
-          };
+        if (memoIndex.sessions.size === 0 && !memoIndex.building) {
+          result.error = "session index empty (build failed or no sessions readable); notes search still active";
         }
       } catch (err) {
         result.error = "search failed: " + String((err && err.message) || err);
-      }
       }
       try {
         const tokens = tokenize(args.query || "");
